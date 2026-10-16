@@ -1,0 +1,52 @@
+{
+  "name": "jungle-wagering-processor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Distributed wagering processor — Jungle Gaming technical challenge",
+  "type": "module",
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "scripts": {
+    "start": "bun src/main.ts",
+    "dev": "bun --watch src/main.ts",
+    "build": "bun build ./src/main.ts --target bun --outdir dist --external pg-native --external @nestjs/microservices --external @nestjs/websockets --external @nestjs/platform-socket.io --external class-transformer --external class-validator",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:unit": "bun test test/unit",
+    "test:integration": "bun test test/integration",
+    "compose:up": "docker compose up -d",
+    "compose:down": "docker compose down -v",
+    "compose:logs": "docker compose logs -f",
+    "stack:init": "bun run compose:up && bun run migration:run",
+    "migration:generate": "bun ./node_modules/typeorm/cli.js migration:generate -d src/infrastructure/database/data-source.ts",
+    "migration:run": "bun ./node_modules/typeorm/cli.js migration:run -d src/infrastructure/database/data-source.ts",
+    "migration:revert": "bun ./node_modules/typeorm/cli.js migration:revert -d src/infrastructure/database/data-source.ts",
+    "migration:show": "bun ./node_modules/typeorm/cli.js migration:show -d src/infrastructure/database/data-source.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.700.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/typeorm": "^11.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "decimal.js": "^10.4.3",
+    "jose": "^5.9.6",
+    "pg": "^8.13.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "typeorm": "^0.3.20",
+    "typeorm-naming-strategies": "^4.1.0",
+    "uuid": "^11.0.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
