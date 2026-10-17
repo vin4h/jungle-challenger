@@ -10,6 +10,7 @@ import { SqsModule } from './infrastructure/sqs/sqs.module';
 import { DomainExceptionFilter } from './wallets/domain-exception.filter';
 import { WalletsModule } from './wallets/wallets.module';
 import { WageringModule } from './wagering/wagering.module';
+import { MessagingModule } from './messaging/messaging.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { WageringModule } from './wagering/wagering.module';
     HealthModule,
     WalletsModule,
     WageringModule,
+    MessagingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AuthGuard },

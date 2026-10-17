@@ -24,6 +24,9 @@ export class OutboxMessageEntity {
   nextAttemptAt!: Date | null;
 
   @Column('timestamptz', { nullable: true })
+  claimedUntil!: Date | null;
+
+  @Column('timestamptz', { nullable: true })
   publishedAt!: Date | null;
 
   @Column('timestamptz')

@@ -23,6 +23,13 @@ export const envSchema = z.object({
   SQS_CONSUMER_MAX_MESSAGES: z.coerce.number().int().min(1).max(10).default(10),
   SQS_CONSUMER_WAIT_SECONDS: z.coerce.number().int().min(0).max(20).default(20),
 
+  SQS_EVENTS_QUEUE_URL: z.string().url(),
+  SQS_EVENTS_DLQ_URL: z.string().url(),
+  OUTBOX_PUBLISHER_ENABLED: envBoolean(false),
+  OUTBOX_PUBLISHER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  OUTBOX_PUBLISHER_INTERVAL_MS: z.coerce.number().int().min(50).default(1000),
+  OUTBOX_LEASE_MS: z.coerce.number().int().min(1000).default(30000),
+
   AUTH_ENABLED: envBoolean(true),
   KEYCLOAK_ISSUER: z.string().url(),
   KEYCLOAK_AUDIENCE: z.string().min(1).default('account'),

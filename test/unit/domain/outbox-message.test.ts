@@ -41,28 +41,41 @@ describe('OutboxMessage', () => {
     expect(message.payload).toEqual(event.toJSON() as unknown as Record<string, unknown>);
     expect(message.attempts).toBe(0);
     expect(message.isPending()).toBe(true);
-    expect(message.isDue(AT)).toBe(true);
+    expect(message.isClaimable(AT)).toBe(true);
   });
 
-  it('schedules retries with exponential backoff and increments attempts', () => {
+  it('is not claimable while leased', () => {
     const message = OutboxMessage.enqueue(sampleEvent(), { createdAt: AT });
+    const lease = new Date(AT.getTime() + 30_000);
+    message.claim(lease);
+    expect(message.claimedUntil).toEqual(lease);
+    expect(message.isClaimable(new Date(AT.getTime() + 1_000))).toBe(false);
+    expect(message.isClaimable(new Date(lease.getTime() + 1))).toBe(true);
+  });
+
+  it('schedules retries with exponential backoff, increments attempts and clears the lease', () => {
+    const message = OutboxMessage.enqueue(sampleEvent(), { createdAt: AT });
+    message.claim(new Date(AT.getTime() + 30_000));
 
     message.scheduleRetry(AT);
     expect(message.attempts).toBe(1);
     expect(message.nextAttemptAt).toEqual(new Date(AT.getTime() + 1_000));
-    expect(message.isDue(new Date(AT.getTime() + 999))).toBe(false);
-    expect(message.isDue(new Date(AT.getTime() + 1_000))).toBe(true);
+    expect(message.claimedUntil).toBeUndefined();
+    expect(message.isClaimable(new Date(AT.getTime() + 999))).toBe(false);
+    expect(message.isClaimable(new Date(AT.getTime() + 1_000))).toBe(true);
 
     message.scheduleRetry(AT);
     expect(message.attempts).toBe(2);
     expect(message.nextAttemptAt).toEqual(new Date(AT.getTime() + 2_000));
   });
 
-  it('is no longer pending or due once published', () => {
+  it('is no longer claimable or pending once published, and clears the lease', () => {
     const message = OutboxMessage.enqueue(sampleEvent(), { createdAt: AT });
+    message.claim(new Date(AT.getTime() + 30_000));
     message.markPublished(AT);
     expect(message.isPending()).toBe(false);
-    expect(message.isDue(new Date(AT.getTime() + 60_000))).toBe(false);
+    expect(message.claimedUntil).toBeUndefined();
+    expect(message.isClaimable(new Date(AT.getTime() + 60_000))).toBe(false);
   });
 
   it('rehydrates persisted state', () => {
@@ -74,10 +87,12 @@ describe('OutboxMessage', () => {
       occurredAt: AT,
       attempts: 3,
       nextAttemptAt: AT,
+      claimedUntil: AT,
       publishedAt: undefined,
       createdAt: AT,
     });
     expect(message.attempts).toBe(3);
+    expect(message.claimedUntil).toEqual(AT);
     expect(message.isPending()).toBe(true);
   });
 });

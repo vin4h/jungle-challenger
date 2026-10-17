@@ -27,6 +27,8 @@ import { SQS_CLIENT, SQS_QUEUES, type SqsQueueUrls } from './sqs.tokens';
       useFactory: (config: ConfigService): SqsQueueUrls => ({
         wager: config.getOrThrow<string>('SQS_WAGER_QUEUE_URL'),
         wagerDlq: config.getOrThrow<string>('SQS_WAGER_DLQ_URL'),
+        events: config.getOrThrow<string>('SQS_EVENTS_QUEUE_URL'),
+        eventsDlq: config.getOrThrow<string>('SQS_EVENTS_DLQ_URL'),
       }),
     },
   ],

@@ -198,10 +198,11 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 
 ## 7. Transactional Outbox — §11
 
-- [ ] **(P0, IMPL)** Atomicidade: transação + saldo + ledger + inbox + evento confirmados juntos. — §11
-  - parcial: saldo + ledger + evento atômicos; falta inbox.
-- [ ] **(P0, IMPL)** Worker publica pendentes com **múltiplos publishers concorrentes**, sem perder nem duplicar indefinidamente. — §11
-- [ ] **(P0, TEST)** Crash recovery: commit → morte antes de publicar → outra instância publica → evento publicado → duplicata permanece segura. — §11
+- [x] **(P0, IMPL)** Atomicidade: transação + saldo + ledger + inbox + evento confirmados juntos. — §11
+  - ✅ entrada HTTP grava saldo + ledger + outbox; o consumidor SQS acrescenta o inbox na mesma transação.
+- [x] **(P0, IMPL)** Worker publica pendentes com **múltiplos publishers concorrentes**, sem perder nem duplicar indefinidamente. — §11
+- [x] **(P0, TEST)** Crash recovery: commit → morte antes de publicar → outra instância publica → evento publicado → duplicata permanece segura. — §11
+  - ✅ lease expira e outro publisher publica.
 - [x] **(P0, IMPL)** Evento `WagerTransactionProcessed` (qualquer transação aplicada, incl. `LOSS`). — §11
 - [x] **(P0, IMPL)** Evento `WagerTransactionRejected`. — §11
 - [x] **(P0, IMPL)** Evento `WalletBalanceChanged` (**só** quando o saldo muda). — §11
@@ -245,8 +246,10 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [ ] **(P1, TEST)** Atomicidade entre wallet, ledger, inbox e outbox. — §13
 - [x] **(P1, TEST)** Inbox e redelivery. — §13
   - ✅ dedup por `messageId` (mesmo id, dois envios → 1 débito) e payload inválido → DLQ.
-- [ ] **(P1, TEST)** Publishers concorrentes sobre a mesma outbox. — §13
-- [ ] **(P1, TEST)** Retry e DLQ. — §13
+- [x] **(P1, TEST)** Publishers concorrentes sobre a mesma outbox. — §13
+  - ✅ dois publishers concorrentes publicam sem perder eventos.
+- [x] **(P1, TEST)** Retry e DLQ. — §13
+  - ✅ payload inválido do consumidor vai para a DLQ.
 - [ ] **(P1, TEST)** Recuperação após reinicialização. — §13
 
 ### 9.3 Concorrência (paralelismo real, sem mocks sequenciais)
@@ -256,7 +259,7 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [ ] **(P1, TEST)** Wallets distintas processadas em paralelo. — §13
 - [ ] **(P1, TEST)** **≥3 processos/instâncias** simultâneos. — §13
 - [ ] **(P1, TEST)** Worker morto **após commit e antes do ack**. — §13
-- [ ] **(P1, TEST)** Dois publishers sobre a mesma outbox. — §13
+- [x] **(P1, TEST)** Dois publishers sobre a mesma outbox. — §13
 - [x] **(P1, TEST)** `ROLLBACK`/`REFUND` entregue **antes** da referência. — §13
   - ✅ persistência de `PENDING_REFERENCE` comprovada; reprocessamento é o worker do §3.3.
 - [ ] **(P1, TEST)** Reinício do serviço com consistência final comprovada. — §13

@@ -206,3 +206,26 @@ awslocal sqs send-message \
 
 Classificação de erro: **negócio** → `ack`; **transitório** → reentrega (DLQ após 5
 recebimentos); **payload inválido** → DLQ.
+
+## 13. Publisher da outbox
+
+O `OutboxPublisher` drena `outbox_messages` para a fila `wager-events.fifo`. Fica
+**desligado** por padrão:
+
+```
+OUTBOX_PUBLISHER_ENABLED=true
+OUTBOX_PUBLISHER_BATCH_SIZE=20
+OUTBOX_PUBLISHER_INTERVAL_MS=1000
+OUTBOX_LEASE_MS=30000
+```
+
+Cada evento vai com `MessageDeduplicationId = eventId` e `MessageGroupId = walletId`
+(ordem por wallet). Ler a fila de eventos:
+
+```bash
+awslocal sqs receive-message \
+  --queue-url http://localhost:4566/000000000000/wager-events.fifo \
+  --max-number-of-messages 10 \
+  --message-attribute-names All \
+  --attribute-names All
+```

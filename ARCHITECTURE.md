@@ -220,10 +220,13 @@ tipo** e subclasses concretas — `WagerTransactionProcessed`, `WagerTransaction
 `toJSON()` devolve o envelope com `occurredAt` em ISO-8601 e `data` com `MoneyProps`
 (string decimal), nunca a instância de `Money`.
 
-**Publicação:** `OutboxMessage` carrega `attempts`/`nextAttemptAt`/`publishedAt` e é
-**reservada para o slice seguinte**: o worker que publica pendentes (com múltiplos
-publishers concorrentes e backoff) ainda não existe. Neste slice a outbox só acumula
-eventos; a atomicidade já está garantida.
+**Publicação:** o `OutboxPublisher` reserva pendentes com um **lease**
+(`claimed_until`) via `UPDATE ... FOR UPDATE SKIP LOCKED`, publica **fora** da transação
+e então marca como publicada ou agenda retry (backoff do domínio). Múltiplos publishers
+concorrentes não perdem nem duplicam; se um processo morre após o lease, ele expira e
+outro assume. Os eventos vão para a fila `wager-events.fifo` com
+`MessageDeduplicationId = eventId` e `MessageGroupId = walletId` (ordem por wallet,
+paralelismo entre wallets).
 
 **Inbox:** a dedup por `(consumerName, messageId)` é feita pelo consumidor SQS — ver
 §9 — dentro da **mesma** transação do processamento; a entrada HTTP não cria inbox.
@@ -259,9 +262,8 @@ são públicos para testes. O consumidor só sobe com `SQS_CONSUMER_ENABLED=true
 `ContentBasedDeduplication` continua **desligado**: a garantia é o inbox no banco, não o
 broker.
 
-**Pendente (slice seguinte):** a publicação da outbox para a fila `wager-events.fifo`
-(múltiplos publishers com `SKIP LOCKED`) e o worker de `PENDING_REFERENCE`
-(10 tentativas, backoff 30s→1h).
+**Pendente (slice seguinte):** o worker de `PENDING_REFERENCE` (10 tentativas, backoff
+30s→1h) e o endpoint de reconciliação.
 
 ---
 
