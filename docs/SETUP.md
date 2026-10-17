@@ -182,3 +182,27 @@ curl -s http://localhost:3100/wagering/transactions/<transactionId> -H "authoriz
 curl -s http://localhost:3100/providers/provider-a/wagering/transactions/<externalTransactionId> \
   -H "authorization: Bearer $TOKEN"
 ```
+
+## 12. Consumidor SQS
+
+O consumidor da fila `wager-transactions.fifo` reutiliza o mesmo use case da API, com
+dedup persistente (inbox) e `ack` só após o commit. Fica **desligado** por padrão:
+
+```
+SQS_CONSUMER_ENABLED=true
+SQS_CONSUMER_MAX_MESSAGES=10
+SQS_CONSUMER_WAIT_SECONDS=20
+```
+
+Publicar uma mensagem de teste (LocalStack):
+
+```bash
+awslocal sqs send-message \
+  --queue-url http://localhost:4566/000000000000/wager-transactions.fifo \
+  --message-group-id group-1 \
+  --message-deduplication-id "$(uuidgen)" \
+  --message-body '{"messageId":"msg-1","type":"WagerTransactionRequested","occurredAt":"2026-07-29T15:00:00.000Z","data":{"providerId":"provider-a","externalTransactionId":"tx-1","idempotencyKey":"provider-a:tx-1","playerId":"<playerId>","walletId":"<walletId>","roundId":"round-1","gameId":"game-1","kind":"BET","money":{"amount":"25.00","currency":"BRL"}}}'
+```
+
+Classificação de erro: **negócio** → `ack`; **transitório** → reentrega (DLQ após 5
+recebimentos); **payload inválido** → DLQ.

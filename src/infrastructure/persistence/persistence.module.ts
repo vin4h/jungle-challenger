@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { InboxMessageEntity } from './entities/inbox-message.entity';
 import { OutboxMessageEntity } from './entities/outbox-message.entity';
 import { WagerTransactionEntity } from './entities/wager-transaction.entity';
 import { WalletLedgerEntryEntity } from './entities/wallet-ledger-entry.entity';
@@ -13,6 +14,7 @@ import { TypeOrmUnitOfWork } from './typeorm-unit-of-work';
       WalletEntity,
       WalletLedgerEntryEntity,
       WagerTransactionEntity,
+      InboxMessageEntity,
       OutboxMessageEntity,
     ]),
   ],

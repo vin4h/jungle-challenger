@@ -19,6 +19,9 @@ export const envSchema = z.object({
   SQS_ENDPOINT: z.string().url().optional(),
   SQS_WAGER_QUEUE_URL: z.string().url(),
   SQS_WAGER_DLQ_URL: z.string().url(),
+  SQS_CONSUMER_ENABLED: envBoolean(false),
+  SQS_CONSUMER_MAX_MESSAGES: z.coerce.number().int().min(1).max(10).default(10),
+  SQS_CONSUMER_WAIT_SECONDS: z.coerce.number().int().min(0).max(20).default(20),
 
   AUTH_ENABLED: envBoolean(true),
   KEYCLOAK_ISSUER: z.string().url(),

@@ -62,91 +62,11 @@ export class ProcessWagerTransactionUseCase {
   constructor(@Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork) {}
 
   async execute(input: ProcessWagerTransactionInput): Promise<WageringOutcome> {
-    const money = Money.from(input.money);
-    const occurredAt = new Date();
-    const hash = this.computePayloadHash(input, money);
-
     try {
-      return await this.unitOfWork.run(async (repositories) => {
-        const existing = await repositories.transactions.findByIdempotencyKey(input.idempotencyKey);
-        if (existing) {
-          return this.replayOrConflict(existing, hash, input.idempotencyKey);
-        }
-
-        const wallet = await repositories.wallets.findById(input.walletId, { forUpdate: true });
-        if (!wallet) {
-          throw new WalletNotFoundError(input.walletId);
-        }
-
-        const transaction = WagerTransaction.create({
-          id: uuidv7(),
-          providerId: input.providerId,
-          externalTransactionId: input.externalTransactionId,
-          idempotencyKey: input.idempotencyKey,
-          payloadHash: hash,
-          walletId: input.walletId,
-          playerId: input.playerId,
-          roundId: input.roundId,
-          gameId: input.gameId,
-          kind: input.kind,
-          money,
-          referenceExternalTransactionId: input.referenceExternalTransactionId,
-          createdAt: occurredAt,
-        });
-
-        const correlationId = input.correlationId ?? transaction.id;
-        const events: IntegrationEvent<unknown>[] = [];
-        const ledgerEntries: WalletLedgerEntry[] = [];
-
-        const reject = (code: FailureCode): void => {
-          transaction.reject(code);
-          transaction.setResultBalance(wallet.balance);
-          events.push(WagerTransactionRejected.from(transaction, this.eventContext(correlationId, occurredAt)));
-        };
-
-        const applyMovement = (
-          direction: LedgerDirection,
-          referenceTransactionId: string | undefined,
-        ): void => {
-          const entry =
-            direction === LedgerDirection.Debit
-              ? wallet.debit(money, this.movementContext(transaction.id, occurredAt))
-              : wallet.credit(money, this.movementContext(transaction.id, occurredAt));
-          ledgerEntries.push(entry);
-          transaction.markProcessed(referenceTransactionId, occurredAt);
-          transaction.setResultBalance(wallet.balance);
-          events.push(WalletBalanceChanged.from(wallet, entry, this.eventContext(correlationId, occurredAt)));
-          events.push(WagerTransactionProcessed.from(transaction, this.eventContext(correlationId, occurredAt)));
-        };
-
-        await this.dispatch(repositories, {
-          input,
-          transaction,
-          wallet,
-          money,
-          occurredAt,
-          correlationId,
-          events,
-          ledgerEntries,
-          reject,
-          applyMovement,
-        });
-
-        await repositories.transactions.insert(transaction);
-        if (ledgerEntries.length > 0) {
-          await repositories.wallets.insertLedgerEntries(ledgerEntries);
-          await repositories.wallets.update(wallet);
-        }
-        if (events.length > 0) {
-          await repositories.outbox.enqueue(
-            events.map((event) => OutboxMessage.enqueue(event, { createdAt: occurredAt })),
-          );
-        }
-
-        return { transaction, idempotentReplay: false };
-      });
+      return await this.unitOfWork.run((repositories) => this.executeWithin(repositories, input));
     } catch (error) {
       if (error instanceof DuplicateWagerTransactionError) {
+        const hash = this.computePayloadHash(input, Money.from(input.money));
         const existing = await this.unitOfWork.run((repositories) =>
           repositories.transactions.findByIdempotencyKey(input.idempotencyKey),
         );
@@ -156,6 +76,98 @@ export class ProcessWagerTransactionUseCase {
       }
       throw error;
     }
+  }
+
+  async executeWithin(
+    repositories: Repositories,
+    input: ProcessWagerTransactionInput,
+  ): Promise<WageringOutcome> {
+    const money = Money.from(input.money);
+    const occurredAt = new Date();
+    const hash = this.computePayloadHash(input, money);
+
+    const existing = await repositories.transactions.findByIdempotencyKey(input.idempotencyKey);
+    if (existing) {
+      return this.replayOrConflict(existing, hash, input.idempotencyKey);
+    }
+
+    const wallet = await repositories.wallets.findById(input.walletId, { forUpdate: true });
+    if (!wallet) {
+      throw new WalletNotFoundError(input.walletId);
+    }
+
+    const transaction = WagerTransaction.create({
+      id: uuidv7(),
+      providerId: input.providerId,
+      externalTransactionId: input.externalTransactionId,
+      idempotencyKey: input.idempotencyKey,
+      payloadHash: hash,
+      walletId: input.walletId,
+      playerId: input.playerId,
+      roundId: input.roundId,
+      gameId: input.gameId,
+      kind: input.kind,
+      money,
+      referenceExternalTransactionId: input.referenceExternalTransactionId,
+      createdAt: occurredAt,
+    });
+
+    const correlationId = input.correlationId ?? transaction.id;
+    const events: IntegrationEvent<unknown>[] = [];
+    const ledgerEntries: WalletLedgerEntry[] = [];
+
+    const reject = (code: FailureCode): void => {
+      transaction.reject(code);
+      transaction.setResultBalance(wallet.balance);
+      events.push(
+        WagerTransactionRejected.from(transaction, this.eventContext(correlationId, occurredAt)),
+      );
+    };
+
+    const applyMovement = (
+      direction: LedgerDirection,
+      referenceTransactionId: string | undefined,
+    ): void => {
+      const entry =
+        direction === LedgerDirection.Debit
+          ? wallet.debit(money, this.movementContext(transaction.id, occurredAt))
+          : wallet.credit(money, this.movementContext(transaction.id, occurredAt));
+      ledgerEntries.push(entry);
+      transaction.markProcessed(referenceTransactionId, occurredAt);
+      transaction.setResultBalance(wallet.balance);
+      events.push(
+        WalletBalanceChanged.from(wallet, entry, this.eventContext(correlationId, occurredAt)),
+      );
+      events.push(
+        WagerTransactionProcessed.from(transaction, this.eventContext(correlationId, occurredAt)),
+      );
+    };
+
+    await this.dispatch(repositories, {
+      input,
+      transaction,
+      wallet,
+      money,
+      occurredAt,
+      correlationId,
+      events,
+      ledgerEntries,
+      reject,
+      applyMovement,
+    });
+
+    await repositories.transactions.insert(transaction);
+    if (ledgerEntries.length > 0) {
+      await repositories.wallets.insertLedgerEntries(ledgerEntries);
+      await repositories.wallets.update(wallet);
+    }
+    if (events.length > 0) {
+      await repositories.outbox.enqueue(
+        events.map((event) => OutboxMessage.enqueue(event, { createdAt: occurredAt })),
+      );
+    }
+
+    return { transaction, idempotentReplay: false };
   }
 
   private async dispatch(repositories: Repositories, context: DispatchContext): Promise<void> {
@@ -169,7 +181,12 @@ export class ProcessWagerTransactionUseCase {
     if (transaction.kind === WagerTransactionKind.Loss) {
       transaction.markProcessed(undefined, occurredAt);
       transaction.setResultBalance(wallet.balance);
-      events.push(WagerTransactionProcessed.from(transaction, this.eventContext(context.correlationId, occurredAt)));
+      events.push(
+        WagerTransactionProcessed.from(
+          transaction,
+          this.eventContext(context.correlationId, occurredAt),
+        ),
+      );
       return;
     }
 
@@ -183,7 +200,10 @@ export class ProcessWagerTransactionUseCase {
         transaction.markPendingReference();
         transaction.setResultBalance(wallet.balance);
         events.push(
-          WagerTransactionPendingReference.from(transaction, this.eventContext(context.correlationId, occurredAt)),
+          WagerTransactionPendingReference.from(
+            transaction,
+            this.eventContext(context.correlationId, occurredAt),
+          ),
         );
         return;
       }
@@ -277,7 +297,10 @@ export class ProcessWagerTransactionUseCase {
       return FailureCode.AmountMismatch;
     }
 
-    const alreadyReversed = await repositories.transactions.findReversalOf(reference.id, transaction.kind);
+    const alreadyReversed = await repositories.transactions.findReversalOf(
+      reference.id,
+      transaction.kind,
+    );
     if (alreadyReversed) {
       return FailureCode.AlreadyReversed;
     }

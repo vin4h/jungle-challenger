@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { Repositories, UnitOfWork } from '../../domain/unit-of-work';
 import { TypeOrmOutboxRepository } from './typeorm-outbox.repository';
+import { TypeOrmInboxRepository } from './typeorm-inbox.repository';
 import { TypeOrmWagerTransactionRepository } from './typeorm-wager-transaction.repository';
 import { TypeOrmWalletRepository } from './typeorm-wallet.repository';
 
@@ -14,6 +15,7 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
       work({
         wallets: new TypeOrmWalletRepository(manager),
         transactions: new TypeOrmWagerTransactionRepository(manager),
+        inbox: new TypeOrmInboxRepository(manager),
         outbox: new TypeOrmOutboxRepository(manager),
       }),
     );

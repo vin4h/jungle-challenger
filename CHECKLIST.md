@@ -101,9 +101,10 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [ ] **(P2, IMPL)** Ledger de **partidas dobradas** (diferencial opcional). — §6.4
 
 ### 2.5 Inbox — §6.5
-- [ ] **(P0, IMPL)** `InboxMessage`: `messageId`, `consumerName`, `payloadHash`, `receivedAt`, `_processedAt`. — §6.5
-- [ ] **(P0, IMPL)** `receive`, `rehydrate`, `isProcessed`, `markProcessed`. — §6.5
-- [ ] **(P0, IMPL)** Dedup persistente por `(consumerName, messageId)`. — §6.5, §10
+- [x] **(P0, IMPL)** `InboxMessage`: `messageId`, `consumerName`, `payloadHash`, `receivedAt`, `_processedAt`. — §6.5
+- [x] **(P0, IMPL)** `receive`, `rehydrate`, `isProcessed`, `markProcessed`. — §6.5
+- [x] **(P0, IMPL)** Dedup persistente por `(consumerName, messageId)`. — §6.5, §10
+  - ✅ `INSERT ... ON CONFLICT DO NOTHING RETURNING` na mesma transação do processamento.
 
 ### 2.6 Outbox — §6.5
 - [x] **(P0, IMPL)** `OutboxMessage`: `id`, `aggregateId`, `eventType`, `payload`, `occurredAt`, `_attempts`, `_nextAttemptAt`, `_publishedAt`. — §6.5
@@ -183,13 +184,15 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 
 ## 6. Processamento por SQS — §10
 
-- [ ] **(P0, IMPL)** Consumidor **reutiliza o mesmo use case** da entrada HTTP. — §10
-- [ ] **(P0, IMPL)** Dedup via **inbox persistente** por `(consumerName, messageId)`. — §10
-- [ ] **(P0, IMPL)** `ack` **somente após o commit**. — §10
-- [ ] **(P0, IMPL)** Classificar erros: **negócio** (terminal, ack) / **transitório** (retry + backoff) / **permanente** (DLQ). — §10
-- [ ] **(P0, IMPL)** Limite de tentativas antes da DLQ. — §10
-- [ ] **(P0, IMPL)** Em `SIGTERM`: concluir mensagens em andamento ou devolver visibilidade. — §10
-- [ ] **(P0, IMPL)** Suportar **redelivery sem duplicar efeitos**. — §10
+- [x] **(P0, IMPL)** Consumidor **reutiliza o mesmo use case** da entrada HTTP. — §10
+  - ✅ `ProcessWagerTransactionUseCase.executeWithin` recebe os repositórios da transação.
+- [x] **(P0, IMPL)** Dedup via **inbox persistente** por `(consumerName, messageId)`. — §10
+- [x] **(P0, IMPL)** `ack` **somente após o commit**. — §10
+- [x] **(P0, IMPL)** Classificar erros: **negócio** (terminal, ack) / **transitório** (retry + backoff) / **permanente** (DLQ). — §10
+- [x] **(P0, IMPL)** Limite de tentativas antes da DLQ. — §10
+  - ✅ `maxReceiveCount=5` na redrive policy da fila.
+- [x] **(P0, IMPL)** Em `SIGTERM`: concluir mensagens em andamento ou devolver visibilidade. — §10
+- [x] **(P0, IMPL)** Suportar **redelivery sem duplicar efeitos**. — §10
 
 ---
 
@@ -240,7 +243,8 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [x] **(P1, TEST)** Migrations e constraints. — §13
   - ✅ inclui: unicidade `playerId`+moeda, `CHECK` de saldo, e trigger append-only do ledger.
 - [ ] **(P1, TEST)** Atomicidade entre wallet, ledger, inbox e outbox. — §13
-- [ ] **(P1, TEST)** Inbox e redelivery. — §13
+- [x] **(P1, TEST)** Inbox e redelivery. — §13
+  - ✅ dedup por `messageId` (mesmo id, dois envios → 1 débito) e payload inválido → DLQ.
 - [ ] **(P1, TEST)** Publishers concorrentes sobre a mesma outbox. — §13
 - [ ] **(P1, TEST)** Retry e DLQ. — §13
 - [ ] **(P1, TEST)** Recuperação após reinicialização. — §13

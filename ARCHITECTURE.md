@@ -225,12 +225,47 @@ tipo** e subclasses concretas — `WagerTransactionProcessed`, `WagerTransaction
 publishers concorrentes e backoff) ainda não existe. Neste slice a outbox só acumula
 eventos; a atomicidade já está garantida.
 
-**Inbox:** a dedup por `(consumerName, messageId)` acompanha o consumidor SQS (slice
-seguinte); a entrada HTTP não cria inbox.
+**Inbox:** a dedup por `(consumerName, messageId)` é feita pelo consumidor SQS — ver
+§9 — dentro da **mesma** transação do processamento; a entrada HTTP não cria inbox.
 
 ---
 
-## 9. Observabilidade **[PENDENTE]**
+## 9. Consumidor SQS e Inbox **[DECIDIDO]**
+
+A fila `wager-transactions.fifo` é uma segunda entrada para **o mesmo use case**
+(`ProcessWagerTransactionUseCase.executeWithin`), que recebe os repositórios da transação
+corrente.
+
+**Fluxo por mensagem:**
+1. parse do envelope `{ messageId, type, occurredAt, data }` (schema Zod,
+   `type = WagerTransactionRequested`);
+2. **numa única transação SQL**: `inbox.tryInsert((consumerName, messageId))` →
+   `executeWithin` (transação + saldo + ledger + outbox) → `inbox.markProcessed`;
+3. **`ack` (delete) somente após o commit**.
+
+`tryInsert` usa `INSERT ... ON CONFLICT DO NOTHING RETURNING`: um `messageId` já presente
+retorna `false` e a mensagem é apenas confirmada, sem reaplicar efeito.
+
+**Classificação de erro:**
+- **negócio** (`DomainError`) → terminal → `ack`;
+- **transitório** (DB/SQS) → não deleta; a visibilidade reentrega até a DLQ
+  (`maxReceiveCount=5`);
+- **permanente** (payload inválido) → envia para `wager-transactions-dlq.fifo` (`ack`).
+
+**Encerramento:** `OnApplicationShutdown` para o loop, conclui a mensagem em andamento e
+faz `ack`; o que não concluir fica sem `ack` e a visibilidade devolve. `start()`/`stop()`
+são públicos para testes. O consumidor só sobe com `SQS_CONSUMER_ENABLED=true`.
+
+`ContentBasedDeduplication` continua **desligado**: a garantia é o inbox no banco, não o
+broker.
+
+**Pendente (slice seguinte):** a publicação da outbox para a fila `wager-events.fifo`
+(múltiplos publishers com `SKIP LOCKED`) e o worker de `PENDING_REFERENCE`
+(10 tentativas, backoff 30s→1h).
+
+---
+
+## 10. Observabilidade **[PENDENTE]**
 
 Logs estruturados JSON (com `correlationId`, `messageId`, `transactionId`, `walletId`,
 `providerId`), métricas e health checks. Health checks já implementados; logs e métricas
@@ -238,7 +273,7 @@ pendentes.
 
 ---
 
-## 10. Limitações conhecidas
+## 11. Limitações conhecidas
 
 - **[DECIDIDO]** Preparado para uma única moeda (`BRL`) em runtime, mas o modelo é
   multi-moeda e conflitos de moeda devem ser testados (README §6.1).
