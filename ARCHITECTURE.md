@@ -18,13 +18,19 @@ Camadas:
 
 ```
 src/
+├── domain/            núcleo: Money, Wallet, WalletLedgerEntry, WagerTransaction,
+│                      portas (repositórios, UnitOfWork) e erros de domínio — sem ORM,
+│                      NestJS nem broker
+├── wallets/           feature HTTP: controller, use case WalletService, DTOs, presenter
 ├── config/            validação de ambiente (schema Zod, fail-fast)
 ├── infrastructure/    adaptadores: banco (TypeORM), SQS, auth (Keycloak)
 └── health/            probes de liveness e readiness
 ```
 
 Princípio: o **domínio** não conhece ORM, NestJS nem o broker. As dependências apontam
-para dentro (infrastructure → domínio), e não o contrário.
+para dentro (infrastructure → domínio), e não o contrário. A atomicidade é expressa pela
+porta `UnitOfWork`: o caso de uso recebe repositórios ligados ao `EntityManager` da
+transação corrente — nunca abre transação por conta própria.
 
 ---
 
@@ -46,7 +52,7 @@ para dentro (infrastructure → domínio), e não o contrário.
 
 **Decisão:** TypeORM 0.3.
 
-**Motivação:** familiaridade da equipe e integração direta com NestJS
+**Motivação:** familiaridade e integração direta com NestJS
 (`@nestjs/typeorm`). O README aceita TypeORM explicitamente.
 
 **Como as garantias do README são atendidas apesar de o TypeORM não expor Unit of Work
@@ -58,9 +64,23 @@ explícito como o MikroORM:**
 - **Concorrência:** a unidade de concorrência é a `walletId`. A estratégia
   (optimistic lock via coluna `version`, com retry limitado, ou `UPDATE` condicional
   atômico) está documentada na seção 6 e será confirmada na implementação.
-- **Mapeamento do `Money`:** valor e moeda em colunas separadas (`NUMERIC(18,2)` +
-  `CHAR(3)`). O domínio nunca vê o tipo do banco — a entidade TypeORM converte para
-  `Money` na reidratação.
+- **Mapeamento do `Money`:**
+  - **Representação:** `Money` é um value object imutável sobre `decimal.js` (base-10,
+    precisão arbitrária). `number`/`float`/`double` nunca tocam dinheiro.
+  - **Exatidão:** soma, subtração e negação são exatas (`0.1 + 0.2 = 0.3`). A precisão do
+    `Decimal` é fixada em 40 dígitos (com `ROUND_HALF_UP`) para nunca depender do default
+    da lib; resultados que estouram `NUMERIC(18,2)` viram **erro de domínio**, não
+    arredondamento silencioso.
+  - **Sem divisão/multiplicação:** o contrato do `Money` expõe apenas `add`/`subtract`/
+    `negate`, então o caso de divisão não-terminante (`1/3`) não existe no domínio. Se um
+    dia entrar percentual/split de payout, será uma operação explícita com escala e modo
+    de arredondamento documentados.
+  - **Contrato de entrada × aritmética:** `Money.from` (entrada) rejeita negativos, `NaN`,
+    `Infinity`, notação científica, vazio, >2 casas e >16 dígitos inteiros; resultados
+    aritméticos podem ser negativos (ex.: `difference` da reconciliação).
+  - **Persistência:** valor e moeda em colunas separadas (`NUMERIC(18,2)` + `CHAR(3)`); o
+    driver devolve `numeric` como **string** (o OID 1700 não é convertido para `float`), e
+    a reidratação usa `Money.rehydrate` — nunca `Number()`/`parseFloat`.
 - **`synchronize: false`** sempre: o schema é propriedade das migrations.
 
 **Trade-off:** TypeORM não oferece Identity Map nem change tracking explícito; o
@@ -108,12 +128,52 @@ como qualquer outra entrada.
 
 ---
 
-## 6. Concorrência **[PENDENTE]**
+## 6. Concorrência **[DECIDIDO]**
 
-A ser definido com a implementação do agregado `Wallet`. Requisitos que a escolha precisa
-atender: nenhum lost update, sem lock global, correto com ≥3 instâncias, e o cenário
-obrigatório da seção 8 do README (duas apostas de `80.00` sobre saldo `100.00` →
-um `PROCESSED`, um `REJECTED`, saldo `20.00`).
+**Unidade de concorrência:** `walletId` (README seção 8).
+
+**Estratégia:** *pessimistic write lock* — o caso de uso lê a wallet com
+`SELECT ... FOR UPDATE` (`findById(id, { forUpdate: true })`) dentro da transação SQL, e
+só então valida e escreve. O lock é por wallet, nunca global.
+
+**Motivação:** o raciocínio de correção é direto (não há lost update nem loop de retry
+ilimitado) e o `UPDATE` é serializado apenas entre operações da mesma wallet; wallets
+diferentes progridem em paralelo. O README lista pessimistic locking como aceitável, e a
+alternativa otimista (version + retry) adiciona caminhos de erro sem ganho de correção
+para este perfil de carga.
+
+**`version`:** mantido como contador monotônico — inicia em `1` e incrementa **somente
+quando o saldo muda** (o crédito de abertura faz parte da criação, então permanece `1`).
+Serve para auditoria/observabilidade; a serialização real é do lock.
+
+**Última linha no banco:** além do lock, o schema reforça as invariantes —
+`CHECK (balance_amount >= 0)` em `wallets`, `CHECK (balance_before ± amount =
+balance_after)` e `CHECK (balance_after >= 0)` em `wallet_ledger_entries`, e
+`UNIQUE (player_id, currency)`. Mesmo sob falha de aplicação, o banco não aceita saldo
+negativo nem duas wallets iguais.
+
+**Cenário obrigatório (README seção 8):** saldo `100.00`, duas apostas de `80.00`
+simultâneas. Com o lock por wallet, a segunda transação espera o commit da primeira, lê o
+saldo `20.00` e é rejeitada por saldo insuficiente → exatamente uma `PROCESSED`, uma
+`REJECTED`, saldo `20.00` e um único `DEBIT` no ledger. (As regras de aposta por SQS
+chegam em um slice seguinte; a primitiva de concorrência já está implementada.)
+
+## 6.1 Schema e atomicidade da wallet **[DECIDIDO]**
+
+- **Um único boundary atômico:** criar wallet com saldo inicial > 0 grava, na **mesma
+  transação SQL**, a wallet, a transação interna `OPENING` e o lançamento `CREDIT` de
+  abertura. Ordem de insert: `wallets` → `wager_transactions` →
+  `wallet_ledger_entries` (as FKs apontam nessa direção).
+- **Ledger append-only no banco:** um trigger `BEFORE UPDATE OR DELETE` levanta exceção —
+  a imutabilidade do §6.4 não depende de disciplina de código.
+- **`OPENING` é interno:** `WagerTransaction.create` rejeita `OPENING`; só a factory
+  `WagerTransaction.open` o produz. O `CHECK` do schema ainda exige os identificadores
+  externos (`provider_id`, `external_transaction_id`, `round_id`, `game_id`) para toda
+  transação **não**-`OPENING`.
+- **Mapeamento de status HTTP:** centralizado no `DomainExceptionFilter`, a partir do
+  `code` estável do erro de domínio — `INVALID_MONEY`/`CURRENCY_MISMATCH`/
+  `INVALID_WALLET_STATE` → `400`; `WALLET_ALREADY_EXISTS` → `409`; `WALLET_NOT_FOUND` →
+  `404`; `INSUFFICIENT_FUNDS` → `422` (ainda não exercitado pelos endpoints de wallet).
 
 ---
 

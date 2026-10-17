@@ -7,12 +7,6 @@ export interface DatabaseEnv {
   readonly DB_LOGGING?: boolean;
 }
 
-/**
- * Shared DataSource options used by both the Nest runtime module and the
- * TypeORM CLI (`data-source.ts`).
- *
- * `synchronize` is always false: the schema is owned by versioned migrations.
- */
 export function baseDataSourceOptions(env: DatabaseEnv, cwd: string = process.cwd()): DataSourceOptions {
   return {
     type: 'postgres',

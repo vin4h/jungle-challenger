@@ -110,3 +110,29 @@ bun run typecheck     # TypeScript estrito
 ```bash
 bun run compose:down   # remove containers e volumes (limpa o banco)
 ```
+
+## 10. API de Wallet
+
+Endpoints protegidos pelo guard global (com `AUTH_ENABLED=true`, exigem Bearer token —
+ver seção 7). Com `AUTH_ENABLED=false` o guard é no-op e o header pode ser omitido.
+
+Criar wallet (saldo inicial > 0 gera a transação `OPENING` + lançamento `CREDIT` na
+mesma transação SQL):
+
+```bash
+curl -s -X POST http://localhost:3100/wallets \
+  -H "content-type: application/json" \
+  -H "authorization: Bearer $TOKEN" \
+  -d '{"playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","initialBalance":{"amount":"1000.00","currency":"BRL"}}'
+```
+
+Consultar a wallet e o ledger (cursor opaco, keyset):
+
+```bash
+curl -s http://localhost:3100/wallets/<walletId> -H "authorization: Bearer $TOKEN"
+curl -s "http://localhost:3100/wallets/<walletId>/ledger?limit=50&cursor=<nextCursor>" \
+  -H "authorization: Bearer $TOKEN"
+```
+
+Erros de domínio: `400` (payload/moeda inválidos), `404` (wallet inexistente), `409`
+(duplicata `playerId` + `currency`).

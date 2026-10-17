@@ -3,12 +3,6 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SQS_CLIENT, SQS_QUEUES, type SqsQueueUrls } from './sqs.tokens';
 
-/**
- * Provides a shared SQS client and the resolved queue URLs.
- *
- * The client is configured for LocalStack/MiniStack locally via `SQS_ENDPOINT`;
- * in a real AWS environment the endpoint is omitted and the SDK resolves it.
- */
 @Global()
 @Module({
   providers: [

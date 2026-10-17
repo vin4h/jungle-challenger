@@ -1,21 +1,11 @@
 import { z } from 'zod';
 
-/**
- * Parses loosely-typed boolean flags coming from environment variables.
- * Accepts: "true"/"false"/"1"/"0". Anything else falls back to the default.
- */
 const envBoolean = (defaultValue: boolean) =>
   z
     .enum(['true', 'false', '1', '0'])
     .default(defaultValue ? 'true' : 'false')
     .transform((value) => value === 'true' || value === '1');
 
-/**
- * Single source of truth for environment configuration.
- *
- * Fail-fast: the application refuses to boot if any required variable is missing
- * or malformed. This keeps infrastructure misconfiguration out of request handling.
- */
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().max(65535).default(3000),
@@ -37,7 +27,6 @@ export const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
-/** Used by `ConfigModule.forRoot({ validate })`. */
 export function validateEnv(raw: Record<string, unknown>): Env {
   const result = envSchema.safeParse(raw);
   if (!result.success) {

@@ -17,19 +17,6 @@ export interface AuthenticatedActor {
 
 type AuthenticatedRequest = Request & { actor?: AuthenticatedActor };
 
-/**
- * Global authentication guard.
- *
- * Design notes:
- * - When `AUTH_ENABLED` is false, it is a deliberate no-op. This is the documented
- *   extension point: authentication does not score points (README section 2), so the
- *   financial core must be reachable without it during development and grading.
- * - When enabled, it validates the bearer token against the external IdP.
- * - Routes annotated with `@Public()` are always reachable (health checks).
- *
- * Whatever the mode, the *domain* validation of the provider identity carried in a
- * message is never bypassed — authentication is transport-level only.
- */
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(

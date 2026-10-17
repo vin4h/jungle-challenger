@@ -1,12 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-/**
- * Baseline migration.
- *
- * Enables the extensions the schema depends on and proves the migration pipeline
- * is versioned and reversible (README section 4). Domain tables arrive in
- * subsequent migrations.
- */
 export class InitExtensions1700000000000 implements MigrationInterface {
   name = 'InitExtensions1700000000000';
 

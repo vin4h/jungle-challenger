@@ -2,13 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
-/**
- * Verifies bearer tokens issued by the external Identity Provider (Keycloak).
- *
- * The JWKS is fetched lazily and cached by `jose`; key rotation is handled
- * transparently. No user store is kept locally — identity is delegated to the IdP,
- * as required by README section 2.
- */
 @Injectable()
 export class TokenVerifier {
   private readonly logger = new Logger(TokenVerifier.name);

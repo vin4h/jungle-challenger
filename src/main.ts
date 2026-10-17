@@ -7,7 +7,6 @@ import { AppModule } from './app.module';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
-  // Input is untrusted: strip unknown fields and reject unexpected ones.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -16,8 +15,6 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // Graceful shutdown: lets the consumer finish in-flight messages and return
-  // visibility before exiting (README section 10). Required by the smoke test too.
   app.enableShutdownHooks();
 
   const config = app.get(ConfigService);

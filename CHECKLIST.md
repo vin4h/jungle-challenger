@@ -43,52 +43,59 @@ Legenda de prioridade:
 ## 2. Modelo de domínio — §6
 
 Regra de modelagem aplicada a todas as entidades (§6.0):
-- [ ] **(P0, IMPL)** Construtor `private`/`protected` + **factories estáticas** (`create`/`from`/`rehydrate`). — §6.0
-- [ ] **(P0, IMPL)** `rehydrate` reconstrói estado persistido **sem revalidar transições**. — §6.0
+- [x] **(P0, IMPL)** Construtor `private`/`protected` + **factories estáticas** (`create`/`from`/`rehydrate`). — §6.0
+- [x] **(P0, IMPL)** `rehydrate` reconstrói estado persistido **sem revalidar transições**. — §6.0
 
 ### 2.1 Money — §6.1
-- [ ] **(P0, IMPL)** Classe `Money` **imutável** (toda op. retorna nova instância). — §6.1
-- [ ] **(P0, IMPL)** `from`, `zero`. — §6.1
-- [ ] **(P0, IMPL)** `add`, `subtract`, `negate`. — §6.1
-- [ ] **(P0, IMPL)** `isZero`, `isPositive`, `isNegative`, `isLessThan`, `equals`. — §6.1
-- [ ] **(P0, IMPL)** `toJSON`, `toString`, `assertSameCurrency`. — §6.1
-- [ ] **(P0, IMPL)** `amount` entra/sai como **string decimal, escala fixa 2**. — §6.1
-- [ ] **(P0, IMPL)** Operações entre moedas diferentes lançam **erro de domínio**. — §6.1
-- [ ] **(P0, IMPL)** Rejeitar: `NaN`, `Infinity`, notação científica, string vazia, >2 casas, negativos em contratos de entrada. — §6.1
-- [ ] **(P0, IMPL)** Domínio **não** depende de tipos monetários do ORM nem decorators do NestJS. — §6.1
-- [ ] **(P0, IMPL)** Persistência: valor e moeda em colunas separadas, representação exata, reidratado como `Money`. — §6.1
-- [ ] **(P1, IMPL)** Modelo multi-moeda (assume-se só `BRL`, mas moeda é parâmetro e conflitos são testados). — §6.1
+- [x] **(P0, IMPL)** Classe `Money` **imutável** (toda op. retorna nova instância). — §6.1
+- [x] **(P0, IMPL)** `from`, `zero`. — §6.1
+- [x] **(P0, IMPL)** `add`, `subtract`, `negate`. — §6.1
+- [x] **(P0, IMPL)** `isZero`, `isPositive`, `isNegative`, `isLessThan`, `equals`. — §6.1
+- [x] **(P0, IMPL)** `toJSON`, `toString`, `assertSameCurrency`. — §6.1
+- [x] **(P0, IMPL)** `amount` entra/sai como **string decimal, escala fixa 2**. — §6.1
+- [x] **(P0, IMPL)** Operações entre moedas diferentes lançam **erro de domínio**. — §6.1
+- [x] **(P0, IMPL)** Rejeitar: `NaN`, `Infinity`, notação científica, string vazia, >2 casas, negativos em contratos de entrada. — §6.1
+- [x] **(P0, IMPL)** Domínio **não** depende de tipos monetários do ORM nem decorators do NestJS. — §6.1
+- [x] **(P0, IMPL)** Persistência: valor e moeda em colunas separadas, representação exata, reidratado como `Money`. — §6.1
+- [x] **(P1, IMPL)** Modelo multi-moeda (assume-se só `BRL`, mas moeda é parâmetro e conflitos são testados). — §6.1
 
 ### 2.2 Wallet (Aggregate Root) — §6.2
-- [ ] **(P0, IMPL)** `Wallet` com `id`, `playerId`, `currency`, `_balance`, `_version`, `createdAt`, `_updatedAt`. — §6.2
-- [ ] **(P0, IMPL)** `open`, `rehydrate`; getters `balance`, `version`, `updatedAt`. — §6.2
-- [ ] **(P0, IMPL)** `debit(...)` e `credit(...)` mantendo saldo↔ledger consistentes. — §6.2
-- [ ] **(P0, IMPL)** `assertSameCurrency`. — §6.2
-- [ ] **(P0, IMPL)** Invariante: **≤1 wallet por `playerId` + `currency`**. — §6.2
-- [ ] **(P0, IMPL)** Invariante: **saldo nunca negativo**. — §6.2
-- [ ] **(P0, IMPL)** Invariante: toda mudança de saldo tem lançamento no ledger (e vice-versa). — §6.2
-- [ ] **(P0, IMPL)** Invariante: operações concorrentes não causam **lost update**. — §6.2
-- [ ] **(P0, IMPL)** Invariante: moeda da operação == moeda da wallet. — §6.2
-- [ ] **(P0, IMPL)** `version` inicia em `1` e **incrementa só quando o saldo muda**. — §6.2
+- [x] **(P0, IMPL)** `Wallet` com `id`, `playerId`, `currency`, `_balance`, `_version`, `createdAt`, `_updatedAt`. — §6.2
+- [x] **(P0, IMPL)** `open`, `rehydrate`; getters `balance`, `version`, `updatedAt`. — §6.2
+- [x] **(P0, IMPL)** `debit(...)` e `credit(...)` mantendo saldo↔ledger consistentes. — §6.2
+- [x] **(P0, IMPL)** `assertSameCurrency`. — §6.2
+- [x] **(P0, IMPL)** Invariante: **≤1 wallet por `playerId` + `currency`**. — §6.2
+  - ✅ `UNIQUE (player_id, currency)` no schema; violação → `409` (inclusive sob corrida).
+- [x] **(P0, IMPL)** Invariante: **saldo nunca negativo**. — §6.2
+  - ✅ `CHECK (balance_amount >= 0)` + guarda de domínio (`InsufficientFundsError`).
+- [x] **(P0, IMPL)** Invariante: toda mudança de saldo tem lançamento no ledger (e vice-versa). — §6.2
+  - ✅ `debit`/`credit` criam o `WalletLedgerEntry` dentro do agregado (`pullLedgerEntries`).
+- [x] **(P0, IMPL)** Invariante: operações concorrentes não causam **lost update**. — §6.2
+  - ✅ `SELECT ... FOR UPDATE` por wallet (`findById(..., { forUpdate: true })`); decisão em `ARCHITECTURE.md` §6.
+- [x] **(P0, IMPL)** Invariante: moeda da operação == moeda da wallet. — §6.2
+- [x] **(P0, IMPL)** `version` inicia em `1` e **incrementa só quando o saldo muda**. — §6.2
 
 ### 2.3 WagerTransaction — §6.3
-- [ ] **(P0, IMPL)** Enum `WagerTransactionKind`: `OPENING` (interno), `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`. — §6.3
-- [ ] **(P0, IMPL)** Enum `WagerTransactionStatus`: `PENDING`, `PENDING_REFERENCE`, `PROCESSED`, `REJECTED`, `FAILED`. — §6.3
-- [ ] **(P0, IMPL)** Campos: `id`, `providerId`, `externalTransactionId`, `idempotencyKey`, `payloadHash`, `walletId`, `playerId`, `roundId`, `gameId`, `kind`, `money`, `referenceExternalTransactionId` (id no provedor), `createdAt`, `_status`, `_referenceTransactionId`, `_failureCode`, `_processedAt`. — §6.3
-- [ ] **(P0, IMPL)** `create` (nasce `PENDING`, valida exigência de referência por kind) e `rehydrate`. — §6.3
-- [ ] **(P0, IMPL)** Transições: `markProcessed`, `markPendingReference`, `reject`, `fail` — lançam `InvalidTransactionStateError` se estado terminal. — §6.3
-- [ ] **(P0, IMPL)** Consultas: `isTerminal`, `affectsBalance` (false p/ `LOSS`), `requiresReference` (true p/ `REFUND`/`ROLLBACK`), `matchesPayload`, `ledgerDirectionFor`. — §6.3
-- [ ] **(P0, IMPL)** `PROCESSED`/`REJECTED`/`FAILED` são **terminais** e imutáveis. — §6.3
-- [ ] **(P0, IMPL)** `OPENING` **não** pode ser submetido pela API nem pela fila. — §6.3
+- [x] **(P0, IMPL)** Enum `WagerTransactionKind`: `OPENING` (interno), `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`. — §6.3
+- [x] **(P0, IMPL)** Enum `WagerTransactionStatus`: `PENDING`, `PENDING_REFERENCE`, `PROCESSED`, `REJECTED`, `FAILED`. — §6.3
+- [x] **(P0, IMPL)** Campos: `id`, `providerId`, `externalTransactionId`, `idempotencyKey`, `payloadHash`, `walletId`, `playerId`, `roundId`, `gameId`, `kind`, `money`, `referenceExternalTransactionId` (id no provedor), `createdAt`, `_status`, `_referenceTransactionId`, `_failureCode`, `_processedAt`. — §6.3
+- [x] **(P0, IMPL)** `create` (nasce `PENDING`, valida exigência de referência por kind) e `rehydrate`. — §6.3
+- [x] **(P0, IMPL)** Transições: `markProcessed`, `markPendingReference`, `reject`, `fail` — lançam `InvalidTransactionStateError` se estado terminal. — §6.3
+- [x] **(P0, IMPL)** Consultas: `isTerminal`, `affectsBalance` (false p/ `LOSS`), `requiresReference` (true p/ `REFUND`/`ROLLBACK`), `matchesPayload`, `ledgerDirectionFor`. — §6.3
+- [x] **(P0, IMPL)** `PROCESSED`/`REJECTED`/`FAILED` são **terminais** e imutáveis. — §6.3
+- [x] **(P0, IMPL)** `OPENING` **não** pode ser submetido pela API nem pela fila. — §6.3
+  - ✅ `WagerTransaction.create` rejeita `OPENING`; só `WagerTransaction.open` o produz.
 - [ ] **(P0, IMPL)** Mesma idempotency key + payload diferente = **conflito**, não replay. — §6.3
 - [ ] **(P1, DOC)** Documentar as **transições válidas**. — §6.3
 
 ### 2.4 WalletLedgerEntry (imutável) — §6.4
-- [ ] **(P0, IMPL)** Campos: `id`, `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `createdAt`. — §6.4
-- [ ] **(P0, IMPL)** Enum `LedgerDirection`: `DEBIT`, `CREDIT`. — §6.4
-- [ ] **(P0, IMPL)** `create` (valida aritmética `balanceBefore ± money === balanceAfter`), `rehydrate`, `isBalanced`. — §6.4
-- [ ] **(P0, IMPL)** **Sem campos mutáveis e sem métodos de transição** (imutabilidade estrutural). — §6.4
-- [ ] **(P0, IMPL)** ≤1 lançamento por wallet por transação financeira. — §6.4
+- [x] **(P0, IMPL)** Campos: `id`, `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `createdAt`. — §6.4
+- [x] **(P0, IMPL)** Enum `LedgerDirection`: `DEBIT`, `CREDIT`. — §6.4
+- [x] **(P0, IMPL)** `create` (valida aritmética `balanceBefore ± money === balanceAfter`), `rehydrate`, `isBalanced`. — §6.4
+- [x] **(P0, IMPL)** **Sem campos mutáveis e sem métodos de transição** (imutabilidade estrutural). — §6.4
+  - ✅ e um trigger `BEFORE UPDATE OR DELETE` no banco garante o append-only.
+- [x] **(P0, IMPL)** ≤1 lançamento por wallet por transação financeira. — §6.4
+  - ✅ `UNIQUE (transaction_id, wallet_id)`.
 - [ ] **(P0, IMPL)** `LOSS` e `REJECTED` **não** geram lançamento. — §6.4
 - [ ] **(P2, IMPL)** Ledger de **partidas dobradas** (diferencial opcional). — §6.4
 
@@ -149,11 +156,11 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 
 ## 5. API HTTP — §9
 
-- [ ] **(P0, IMPL)** `POST /wallets` — cria wallet. — §9
-  - CA: saldo inicial > 0 gera `OPENING` **na mesma transação SQL** + `CREDIT` no ledger.
-  - CA: duplicata `playerId`+`currency` → **conflito**.
-- [ ] **(P0, IMPL)** `GET /wallets/:walletId`. — §9
-- [ ] **(P0, IMPL)** `GET /wallets/:walletId/ledger?cursor=...&limit=50` com **cursor estável e opaco**. — §9
+- [x] **(P0, IMPL)** `POST /wallets` — cria wallet. — §9
+  - CA: saldo inicial > 0 gera `OPENING` **na mesma transação SQL** + `CREDIT` no ledger. ✅
+  - CA: duplicata `playerId`+`currency` → **conflito**. ✅ `409`
+- [x] **(P0, IMPL)** `GET /wallets/:walletId`. — §9
+- [x] **(P0, IMPL)** `GET /wallets/:walletId/ledger?cursor=...&limit=50` com **cursor estável e opaco**. — §9
 - [ ] **(P0, IMPL)** `GET /wagering/transactions/:transactionId`. — §9
 - [ ] **(P0, IMPL)** `GET /providers/:providerId/wagering/transactions/:externalTransactionId`. — §9
 - [ ] **(P0, IMPL)** `POST /wagering/transactions` com header `Idempotency-Key` **obrigatório**. — §9
@@ -218,14 +225,15 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 ## 9. Testes obrigatórios — §13
 
 ### 9.1 Unidade
-- [ ] **(P1, TEST)** `Money`: escala, arredondamento, entradas inválidas. — §13
-- [ ] **(P1, TEST)** Invariantes da `Wallet`. — §13
+- [x] **(P1, TEST)** `Money`: escala, arredondamento, entradas inválidas. — §13
+- [x] **(P1, TEST)** Invariantes da `Wallet`. — §13
 - [ ] **(P1, TEST)** Regras de `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`. — §13
-- [ ] **(P1, TEST)** Conflito de moeda. — §13
+- [x] **(P1, TEST)** Conflito de moeda. — §13
 - [ ] **(P1, TEST)** Idempotency key com payload divergente. — §13
 
 ### 9.2 Integração (PG e LocalStack/MiniStack **reais** em containers)
-- [ ] **(P1, TEST)** Migrations e constraints. — §13
+- [x] **(P1, TEST)** Migrations e constraints. — §13
+  - ✅ inclui: unicidade `playerId`+moeda, `CHECK` de saldo, e trigger append-only do ledger.
 - [ ] **(P1, TEST)** Atomicidade entre wallet, ledger, inbox e outbox. — §13
 - [ ] **(P1, TEST)** Inbox e redelivery. — §13
 - [ ] **(P1, TEST)** Publishers concorrentes sobre a mesma outbox. — §13
@@ -252,7 +260,7 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [x] **(P1, DOC)** `ARCHITECTURE.md` com **decisões, trade-offs e limitações**. — §14 *(stub criado; seções [PENDENTE] a preencher)*
   - [x] Decisão de autenticação (implementar/não + desenho). — §2
   - [x] ORM escolhido, mapeamento do `Money` e estratégia transacional. — §4
-  - [ ] Estratégia de concorrência. — §8
+  - [x] Estratégia de concorrência. — §8 (pessimistic lock por wallet; `ARCHITECTURE.md` §6)
   - [ ] Taxonomia de `failureCode`. — §7.2
   - [ ] Limite/TTL de `PENDING_REFERENCE`. — §7.1
   - [ ] Mapeamento de status HTTP. — §9

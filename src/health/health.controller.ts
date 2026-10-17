@@ -17,14 +17,6 @@ interface ReadinessResponse {
   };
 }
 
-/**
- * Liveness and readiness probes (README section 9 / 12).
- *
- * - `live`    : the process is up. No dependencies are touched.
- * - `ready`   : PostgreSQL and SQS are reachable. Returns 503 when either is down.
- *
- * Both are public (no authentication), as required by README section 2.
- */
 @Controller('health')
 export class HealthController {
   constructor(

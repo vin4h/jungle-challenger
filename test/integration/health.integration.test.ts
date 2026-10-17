@@ -3,12 +3,6 @@ import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../src/app.module';
 
-/**
- * Requires the local stack to be running (`bun run compose:up` + `bun run migration:run`).
- * Skipped by default so `bun test` stays green on a machine without Docker.
- *
- * Run with: RUN_INTEGRATION=1 bun test test/integration
- */
 const runIntegration = process.env.RUN_INTEGRATION === '1';
 const suite = runIntegration ? describe : describe.skip;
 

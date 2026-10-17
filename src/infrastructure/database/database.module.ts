@@ -3,10 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { baseDataSourceOptions } from './typeorm-options';
 
-/**
- * Owns the PostgreSQL connection. Entities are discovered through
- * `autoLoadEntities` (each feature module registers its own via `forFeature`).
- */
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
