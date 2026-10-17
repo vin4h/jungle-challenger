@@ -23,6 +23,13 @@ export const WagerTransactionMapper = {
       referenceTransactionId: entity.referenceTransactionId ?? undefined,
       failureCode: (entity.failureCode as FailureCode | null) ?? undefined,
       processedAt: entity.processedAt ?? undefined,
+      resultBalance:
+        entity.resultBalanceAmount !== null && entity.resultBalanceCurrency !== null
+          ? Money.rehydrate({
+              amount: entity.resultBalanceAmount,
+              currency: entity.resultBalanceCurrency,
+            })
+          : undefined,
       createdAt: entity.createdAt,
     });
   },
@@ -45,6 +52,8 @@ export const WagerTransactionMapper = {
       referenceExternalTransactionId: transaction.referenceExternalTransactionId ?? null,
       referenceTransactionId: transaction.referenceTransactionId ?? null,
       failureCode: transaction.failureCode ?? null,
+      resultBalanceAmount: transaction.resultBalance?.toString() ?? null,
+      resultBalanceCurrency: transaction.resultBalance?.currency ?? null,
       processedAt: transaction.processedAt ?? null,
       createdAt: transaction.createdAt,
     });

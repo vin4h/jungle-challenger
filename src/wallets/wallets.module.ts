@@ -1,18 +1,11 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { WalletLedgerEntryEntity } from '../infrastructure/persistence/entities/wallet-ledger-entry.entity';
-import { WalletEntity } from '../infrastructure/persistence/entities/wallet.entity';
-import { WagerTransactionEntity } from '../infrastructure/persistence/entities/wager-transaction.entity';
-import { TypeOrmUnitOfWork } from '../infrastructure/persistence/typeorm-unit-of-work';
+import { PersistenceModule } from '../infrastructure/persistence/persistence.module';
 import { WalletService } from './wallet.service';
 import { WalletsController } from './wallets.controller';
-import { UNIT_OF_WORK } from './wallets.tokens';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([WalletEntity, WalletLedgerEntryEntity, WagerTransactionEntity]),
-  ],
+  imports: [PersistenceModule],
   controllers: [WalletsController],
-  providers: [WalletService, { provide: UNIT_OF_WORK, useClass: TypeOrmUnitOfWork }],
+  providers: [WalletService],
 })
 export class WalletsModule {}

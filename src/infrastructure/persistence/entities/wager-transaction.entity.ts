@@ -50,6 +50,12 @@ export class WagerTransactionEntity {
   @Column('text', { nullable: true })
   failureCode!: string | null;
 
+  @Column('numeric', { precision: 18, scale: 2, nullable: true })
+  resultBalanceAmount!: string | null;
+
+  @Column('char', { length: 3, nullable: true })
+  resultBalanceCurrency!: string | null;
+
   @Column('timestamptz', { nullable: true })
   processedAt!: Date | null;
 

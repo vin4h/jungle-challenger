@@ -177,17 +177,56 @@ chegam em um slice seguinte; a primitiva de concorrência já está implementada
 
 ---
 
-## 7. Idempotência **[PENDENTE]**
+## 7. Idempotência **[DECIDIDO]**
 
-`Idempotency-Key` obrigatório; `payloadHash` de JSON canônico; mesma key + payload
-divergente = conflito. Persistência via tabela de transações + inbox. Detalhes a definir.
+**Chave:** o header `Idempotency-Key` é a fonte da verdade; quando ausente, a API deriva o
+default `"{providerId}:{externalTransactionId}"`.
+
+**`payloadHash`:** SHA-256 do **JSON canônico** (chaves ordenadas recursivamente) de um
+subconjunto de negócio — `providerId`, `externalTransactionId`, `playerId`, `walletId`,
+`roundId`, `gameId`, `kind`, `money` (normalizado como string de escala 2) e
+`referenceExternalTransactionId`. Transporte (header) e `correlationId` ficam **fora** do
+hash, e o `money` normalizado garante que `"25"` e `"25.00"` produzam o mesmo hash.
+
+**Replay × conflito:**
+- mesma key + **mesmo** `payloadHash` → replay idempotente: `200` com `idempotentReplay: true`
+  e o **mesmo** `transactionId`/saldo observado; nenhum efeito financeiro é reaplicado.
+- mesma key + `payloadHash` **divergente** → `409` (`IDEMPOTENCY_CONFLICT`).
+
+**Persistência:** `wager_transactions.idempotency_key` é `UNIQUE`. A dedup não depende de
+memória: a unicidade no banco é a última linha. Sob corrida (duas requisições idênticas em
+paralelo), a perdedora recebe violação de unicidade, a transação SQL é revertida e a
+resposta é recalculada como replay lendo o registro vencedor.
+
+**Saldo observado (§7.7):** `wager_transactions.result_balance_amount` +
+`result_balance_currency` guardam o saldo no momento do desfecho (cobre `LOSS`, que não
+gera ledger), de modo que repetir a operação devolve o resultado original.
+
+`REFUND`/`ROLLBACK` referenciam por `(providerId, referenceExternalTransactionId)` e a
+referência é validada quanto a provider, player, wallet, moeda e rodada; uma reversão por
+tipo é garantida por consulta a `reference_transaction_id`.
 
 ---
 
-## 8. Transactional Outbox **[PENDENTE]**
+## 8. Transactional Outbox **[DECIDIDO]**
 
-Publicação de eventos atômica com o commit financeiro, com múltiplos publishers
-concorrentes. Detalhes a definir.
+Transação, alteração de saldo, lançamento no ledger e **eventos de integração** são
+gravados na **mesma transação SQL** (`outbox_messages`). Nenhum evento é publicado antes
+do commit.
+
+**Eventos (envelope):** `abstract class IntegrationEvent<T>` com `eventType`/`version` **no
+tipo** e subclasses concretas — `WagerTransactionProcessed`, `WagerTransactionRejected`,
+`WalletBalanceChanged` (só quando o saldo muda) e `WagerTransactionPendingReference`.
+`toJSON()` devolve o envelope com `occurredAt` em ISO-8601 e `data` com `MoneyProps`
+(string decimal), nunca a instância de `Money`.
+
+**Publicação:** `OutboxMessage` carrega `attempts`/`nextAttemptAt`/`publishedAt` e é
+**reservada para o slice seguinte**: o worker que publica pendentes (com múltiplos
+publishers concorrentes e backoff) ainda não existe. Neste slice a outbox só acumula
+eventos; a atomicidade já está garantida.
+
+**Inbox:** a dedup por `(consumerName, messageId)` acompanha o consumidor SQS (slice
+seguinte); a entrada HTTP não cria inbox.
 
 ---
 
@@ -204,4 +243,6 @@ pendentes.
 - **[DECIDIDO]** Preparado para uma única moeda (`BRL`) em runtime, mas o modelo é
   multi-moeda e conflitos de moeda devem ser testados (README §6.1).
 - **[DECIDIDO]** O ambiente de desenvolvimento sobe Keycloak sem TLS e com client público.
+- **[DECIDIDO]** Wallet inexistente em `POST /wagering/transactions` responde `404` e **não**
+  é registrada como `REJECTED`: a FK `wallet_id NOT NULL` impede persistir a transação.
 - **[PENDENTE]** Demais limitações serão registradas conforme a implementação avançar.

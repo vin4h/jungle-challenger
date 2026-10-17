@@ -8,7 +8,7 @@ import type { UnitOfWork } from '../domain/unit-of-work';
 import type { LedgerEntriesPage, ListLedgerEntriesOptions } from '../domain/wallet/wallet.repository';
 import { Wallet } from '../domain/wallet/wallet';
 import { WagerTransaction } from '../domain/wager-transaction/wager-transaction';
-import { UNIT_OF_WORK } from './wallets.tokens';
+import { UNIT_OF_WORK } from '../infrastructure/persistence/persistence.tokens';
 
 export interface CreateWalletInput {
   readonly playerId: string;

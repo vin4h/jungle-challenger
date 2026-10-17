@@ -1,9 +1,11 @@
+import type { OutboxRepository } from './messaging/outbox.repository';
 import type { WagerTransactionRepository } from './wager-transaction/wager-transaction.repository';
 import type { WalletRepository } from './wallet/wallet.repository';
 
 export interface Repositories {
   readonly wallets: WalletRepository;
   readonly transactions: WagerTransactionRepository;
+  readonly outbox: OutboxRepository;
 }
 
 export interface UnitOfWork {

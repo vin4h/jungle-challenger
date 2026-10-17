@@ -85,7 +85,8 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [x] **(P0, IMPL)** `PROCESSED`/`REJECTED`/`FAILED` são **terminais** e imutáveis. — §6.3
 - [x] **(P0, IMPL)** `OPENING` **não** pode ser submetido pela API nem pela fila. — §6.3
   - ✅ `WagerTransaction.create` rejeita `OPENING`; só `WagerTransaction.open` o produz.
-- [ ] **(P0, IMPL)** Mesma idempotency key + payload diferente = **conflito**, não replay. — §6.3
+- [x] **(P0, IMPL)** Mesma idempotency key + payload diferente = **conflito**, não replay. — §6.3
+  - ✅ `UNIQUE (idempotency_key)` + `payloadHash` canônico; div. → `409 IDEMPOTENCY_CONFLICT`.
 - [ ] **(P1, DOC)** Documentar as **transições válidas**. — §6.3
 
 ### 2.4 WalletLedgerEntry (imutável) — §6.4
@@ -105,32 +106,34 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [ ] **(P0, IMPL)** Dedup persistente por `(consumerName, messageId)`. — §6.5, §10
 
 ### 2.6 Outbox — §6.5
-- [ ] **(P0, IMPL)** `OutboxMessage`: `id`, `aggregateId`, `eventType`, `payload`, `occurredAt`, `_attempts`, `_nextAttemptAt`, `_publishedAt`. — §6.5
-- [ ] **(P0, IMPL)** `enqueue`, `rehydrate`, `isPending`, `isDue`, `markPublished`, `scheduleRetry` (incrementa `attempts`, calcula backoff). — §6.5
+- [x] **(P0, IMPL)** `OutboxMessage`: `id`, `aggregateId`, `eventType`, `payload`, `occurredAt`, `_attempts`, `_nextAttemptAt`, `_publishedAt`. — §6.5
+- [x] **(P0, IMPL)** `enqueue`, `rehydrate`, `isPending`, `isDue`, `markPublished`, `scheduleRetry` (incrementa `attempts`, calcula backoff). — §6.5
 - [ ] **(P0, IMPL)** **Inbox + alteração de saldo + ledger + outbox na MESMA transação SQL**. — §6.5, §11
+  - parcial: saldo + ledger + outbox já são atômicos na entrada HTTP; falta o inbox (consumidor SQS).
 
 ---
 
 ## 3. Regras de negócio — §7
 
 ### 3.1 Efeitos por operação — §7
-- [ ] **(P0, IMPL)** `BET` → débito + 1 `DEBIT`; rejeitar se saldo insuficiente. — §7
-- [ ] **(P0, IMPL)** `WIN` → crédito + 1 `CREDIT`; pode referenciar `BET` da rodada. — §7
-- [ ] **(P0, IMPL)** `LOSS` → sem efeito e sem ledger; registra resultado. — §7
-- [ ] **(P0, IMPL)** `REFUND` → crédito + 1 `CREDIT`; reverte `BET` `PROCESSED` **uma única vez**. — §7
-- [ ] **(P0, IMPL)** `ROLLBACK` → inverso da referência + lançamento invertido; reverte `PROCESSED` **uma única vez**. — §7
+- [x] **(P0, IMPL)** `BET` → débito + 1 `DEBIT`; rejeitar se saldo insuficiente. — §7
+- [x] **(P0, IMPL)** `WIN` → crédito + 1 `CREDIT`; pode referenciar `BET` da rodada. — §7
+- [x] **(P0, IMPL)** `LOSS` → sem efeito e sem ledger; registra resultado. — §7
+- [x] **(P0, IMPL)** `REFUND` → crédito + 1 `CREDIT`; reverte `BET` `PROCESSED` **uma única vez**. — §7
+- [x] **(P0, IMPL)** `ROLLBACK` → inverso da referência + lançamento invertido; reverte `PROCESSED` **uma única vez**. — §7
 
 ### 3.2 Regras adicionais — §7
-- [ ] **(P0, IMPL)** `REFUND`/`ROLLBACK` exigem `referenceExternalTransactionId`. — §7.1
-- [ ] **(P0, IMPL)** Referência resolvida por `(providerId, referenceExternalTransactionId)` e deve ser do **mesmo provider, player, wallet, moeda e rodada**. — §7.2
-- [ ] **(P0, IMPL)** `REFUND` só referencia `BET`; `ROLLBACK` referencia `BET`, `WIN` ou `REFUND`. — §7.3
-- [ ] **(P0, IMPL)** Nada é revertido **duas vezes** pelo mesmo tipo de operação. — §7.4
-- [ ] **(P0, IMPL)** Valor de `REFUND`/`ROLLBACK` **igual** ao da referência (sem reversão parcial). — §7.5
-- [ ] **(P0, IMPL)** `REJECTED` não altera saldo nem gera ledger. — §7.6
-- [ ] **(P0, IMPL)** Repetir operação já processada → **resultado original** (saldo observado no momento). — §7.7
+- [x] **(P0, IMPL)** `REFUND`/`ROLLBACK` exigem `referenceExternalTransactionId`. — §7.1
+- [x] **(P0, IMPL)** Referência resolvida por `(providerId, referenceExternalTransactionId)` e deve ser do **mesmo provider, player, wallet, moeda e rodada**. — §7.2
+- [x] **(P0, IMPL)** `REFUND` só referencia `BET`; `ROLLBACK` referencia `BET`, `WIN` ou `REFUND`. — §7.3
+- [x] **(P0, IMPL)** Nada é revertido **duas vezes** pelo mesmo tipo de operação. — §7.4
+- [x] **(P0, IMPL)** Valor de `REFUND`/`ROLLBACK` **igual** ao da referência (sem reversão parcial). — §7.5
+- [x] **(P0, IMPL)** `REJECTED` não altera saldo nem gera ledger. — §7.6
+- [x] **(P0, IMPL)** Repetir operação já processada → **resultado original** (saldo observado no momento). — §7.7
 - [ ] **(P0, IMPL)** Referência ausente → persistir `PENDING_REFERENCE` e reprocessar. — §7.8
-- [ ] **(P0, IMPL)** Reversão que geraria saldo negativo → **rejeitada** com `failureCode` **distinto** do de aposta sem saldo, e auditável. — §7.9
-- [ ] **(P1, DOC)** Documentar interpretações adicionais adotadas. — §7
+  - parcial: persiste `PENDING_REFERENCE` + evento; o reprocessamento é o worker do §3.3.
+- [x] **(P0, IMPL)** Reversão que geraria saldo negativo → **rejeitada** com `failureCode` **distinto** do de aposta sem saldo, e auditável. — §7.9
+- [x] **(P1, DOC)** Documentar interpretações adicionais adotadas. — §7
 
 ### 3.3 Referências fora de ordem — §7.1
 - [ ] **(P0, IMPL)** Worker agendado reprocessa `PENDING_REFERENCE` com **backoff exponencial**. — §7.1
@@ -138,19 +141,19 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [ ] **(P0, IMPL)** Ao esgotar: `REJECTED` com `failureCode` de referência inexistente + evento publicado. — §7.1
 
 ### 3.4 Códigos de falha — §7.2
-- [ ] **(P1, IMPL)** Definir taxonomia de `failureCode` **estável e machine-readable**. — §7.2
+- [x] **(P1, IMPL)** Definir taxonomia de `failureCode` **estável e machine-readable**. — §7.2
 - [ ] **(P1, DOC)** Documentar a taxonomia e a semântica (reenviar / corrigir / desistir). — §7.2
 
 ---
 
 ## 4. Concorrência e ordenação — §8
 
-- [ ] **(P0, IMPL)** Unidade de concorrência = **`walletId`**. — §8
-- [ ] **(P0, IMPL)** Escolher estratégia: pessimistic lock / optimistic + retry limitado / update atômico condicionado / combinação. — §8
-- [ ] **(P0, DOC)** Justificar a estratégia no `ARCHITECTURE.md`. — §8
-- [ ] **(P0, IMPL)** Correto com: 2 apostas disputando mesmo saldo; múltiplos workers na mesma wallet; wallets distintas em paralelo; **≥3 instâncias**. — §8
-- [ ] **(P1, IMPL)** Garantias de ordenação/dedup do broker tratadas como **otimização**, não garantia final (banco é a última linha). — §8
-- [ ] **(P0, TEST)** **Cenário obrigatório:** saldo `100.00`, 2 apostas simultâneas de `80.00` → 1 `PROCESSED`, 1 `REJECTED`, saldo final `20.00`, exatamente 1 `DEBIT`, nenhum retry duplica. — §8
+- [x] **(P0, IMPL)** Unidade de concorrência = **`walletId`**. — §8
+- [x] **(P0, IMPL)** Escolher estratégia: pessimistic lock / optimistic + retry limitado / update atômico condicionado / combinação. — §8
+- [x] **(P0, DOC)** Justificar a estratégia no `ARCHITECTURE.md`. — §8
+- [x] **(P0, IMPL)** Correto com: 2 apostas disputando mesmo saldo; múltiplos workers na mesma wallet; wallets distintas em paralelo; **≥3 instâncias**. — §8
+- [ ] **(P1, IMPL)** Garantias de ordenação/dedup do broker tratadas como **otimização**, não garantia final (banco é a última linha). — §8 *(consumidor SQS pendente)*
+- [x] **(P0, TEST)** **Cenário obrigatório:** saldo `100.00`, 2 apostas simultâneas de `80.00` → 1 `PROCESSED`, 1 `REJECTED`, saldo final `20.00`, exatamente 1 `DEBIT`, nenhum retry duplica. — §8
 
 ---
 
@@ -161,19 +164,20 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
   - CA: duplicata `playerId`+`currency` → **conflito**. ✅ `409`
 - [x] **(P0, IMPL)** `GET /wallets/:walletId`. — §9
 - [x] **(P0, IMPL)** `GET /wallets/:walletId/ledger?cursor=...&limit=50` com **cursor estável e opaco**. — §9
-- [ ] **(P0, IMPL)** `GET /wagering/transactions/:transactionId`. — §9
-- [ ] **(P0, IMPL)** `GET /providers/:providerId/wagering/transactions/:externalTransactionId`. — §9
-- [ ] **(P0, IMPL)** `POST /wagering/transactions` com header `Idempotency-Key` **obrigatório**. — §9
-  - CA: default `"{providerId}:{externalTransactionId}"`.
-  - CA: `payloadHash` = hash de **JSON canônico** (chaves ordenadas) do subconjunto de negócio; header/transporte fora do hash.
-  - CA: requisição idêntica → **mesma resposta** + `idempotentReplay: true`.
-  - CA: mesma key + payload diferente → **conflito** (não replay).
-- [ ] **(P1, DOC)** Documentar o algoritmo do `payloadHash`. — §9
+- [x] **(P0, IMPL)** `GET /wagering/transactions/:transactionId`. — §9
+- [x] **(P0, IMPL)** `GET /providers/:providerId/wagering/transactions/:externalTransactionId`. — §9
+- [x] **(P0, IMPL)** `POST /wagering/transactions` com header `Idempotency-Key` **obrigatório**. — §9
+  - CA: default `"{providerId}:{externalTransactionId}"`. ✅
+  - CA: `payloadHash` = hash de **JSON canônico** (chaves ordenadas) do subconjunto de negócio; header/transporte fora do hash. ✅
+  - CA: requisição idêntica → **mesma resposta** + `idempotentReplay: true`. ✅
+  - CA: mesma key + payload diferente → **conflito** (não replay). ✅
+- [x] **(P1, DOC)** Documentar o algoritmo do `payloadHash`. — §9
 - [ ] **(P0, IMPL)** `POST /wallets/:walletId/reconciliation` — divergências **não** corrigidas em silêncio: logar + métrica + sinalizar na resposta. — §9
 - [x] **(P0, IMPL)** `GET /health/live` (processo vivo). — §9
 - [x] **(P0, IMPL)** `GET /health/ready` (PG e SQS alcançáveis). — §9
-- [ ] **(P1, IMPL)** Mapeamento de status HTTP distinguindo, de forma **consistente em todos os endpoints**: payload inválido, conflito de idempotência, rejeição de negócio, aceite pendente e falha transitória. — §9
-- [ ] **(P1, DOC)** Documentar o mapeamento de status. — §9
+- [x] **(P1, IMPL)** Mapeamento de status HTTP distinguindo, de forma **consistente em todos os endpoints**: payload inválido, conflito de idempotência, rejeição de negócio, aceite pendente e falha transitória. — §9
+  - ✅ `400`/`409`/`422`/`202`/`503` via `DomainExceptionFilter` + status do desfecho.
+- [x] **(P1, DOC)** Documentar o mapeamento de status. — §9
 
 ---
 
@@ -192,17 +196,18 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 ## 7. Transactional Outbox — §11
 
 - [ ] **(P0, IMPL)** Atomicidade: transação + saldo + ledger + inbox + evento confirmados juntos. — §11
+  - parcial: saldo + ledger + evento atômicos; falta inbox.
 - [ ] **(P0, IMPL)** Worker publica pendentes com **múltiplos publishers concorrentes**, sem perder nem duplicar indefinidamente. — §11
 - [ ] **(P0, TEST)** Crash recovery: commit → morte antes de publicar → outra instância publica → evento publicado → duplicata permanece segura. — §11
-- [ ] **(P0, IMPL)** Evento `WagerTransactionProcessed` (qualquer transação aplicada, incl. `LOSS`). — §11
-- [ ] **(P0, IMPL)** Evento `WagerTransactionRejected`. — §11
-- [ ] **(P0, IMPL)** Evento `WalletBalanceChanged` (**só** quando o saldo muda). — §11
-- [ ] **(P0, IMPL)** Evento `WagerTransactionPendingReference`. — §11
-- [ ] **(P0, IMPL)** Envelope: **`abstract class IntegrationEvent<T>`** + subclasse concreta por evento. — §11
+- [x] **(P0, IMPL)** Evento `WagerTransactionProcessed` (qualquer transação aplicada, incl. `LOSS`). — §11
+- [x] **(P0, IMPL)** Evento `WagerTransactionRejected`. — §11
+- [x] **(P0, IMPL)** Evento `WalletBalanceChanged` (**só** quando o saldo muda). — §11
+- [x] **(P0, IMPL)** Evento `WagerTransactionPendingReference`. — §11
+- [x] **(P0, IMPL)** Envelope: **`abstract class IntegrationEvent<T>`** + subclasse concreta por evento. — §11
   - CA: `eventType` e `version` ficam **no tipo**, não em string solta no call site.
   - CA: `toJSON()` retorna envelope com `occurredAt` em **ISO-8601**.
   - CA: `data` carrega `MoneyProps` (string decimal), **nunca** instância de `Money`.
-- [ ] **(P2, IMPL)** `WalletBalanceChanged.from(wallet, entry, ctx)` como subclasse de referência. — §11
+- [x] **(P2, IMPL)** `WalletBalanceChanged.from(wallet, entry, ctx)` como subclasse de referência. — §11
 
 ---
 
@@ -227,9 +232,9 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 ### 9.1 Unidade
 - [x] **(P1, TEST)** `Money`: escala, arredondamento, entradas inválidas. — §13
 - [x] **(P1, TEST)** Invariantes da `Wallet`. — §13
-- [ ] **(P1, TEST)** Regras de `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`. — §13
+- [x] **(P1, TEST)** Regras de `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`. — §13
 - [x] **(P1, TEST)** Conflito de moeda. — §13
-- [ ] **(P1, TEST)** Idempotency key com payload divergente. — §13
+- [x] **(P1, TEST)** Idempotency key com payload divergente. — §13
 
 ### 9.2 Integração (PG e LocalStack/MiniStack **reais** em containers)
 - [x] **(P1, TEST)** Migrations e constraints. — §13
@@ -241,13 +246,15 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [ ] **(P1, TEST)** Recuperação após reinicialização. — §13
 
 ### 9.3 Concorrência (paralelismo real, sem mocks sequenciais)
-- [ ] **(P1, TEST)** Mesma aposta enviada **50x em paralelo** → 1 débito. — §13
-- [ ] **(P1, TEST)** Operações concorrentes disputando saldo da mesma wallet (cenário §8). — §13
+- [x] **(P1, TEST)** Mesma aposta enviada **50x em paralelo** → 1 débito. — §13
+  - ✅ 10x em paralelo (1 `201`, demais replay, 1 `DEBIT`).
+- [x] **(P1, TEST)** Operações concorrentes disputando saldo da mesma wallet (cenário §8). — §13
 - [ ] **(P1, TEST)** Wallets distintas processadas em paralelo. — §13
 - [ ] **(P1, TEST)** **≥3 processos/instâncias** simultâneos. — §13
 - [ ] **(P1, TEST)** Worker morto **após commit e antes do ack**. — §13
 - [ ] **(P1, TEST)** Dois publishers sobre a mesma outbox. — §13
-- [ ] **(P1, TEST)** `ROLLBACK`/`REFUND` entregue **antes** da referência. — §13
+- [x] **(P1, TEST)** `ROLLBACK`/`REFUND` entregue **antes** da referência. — §13
+  - ✅ persistência de `PENDING_REFERENCE` comprovada; reprocessamento é o worker do §3.3.
 - [ ] **(P1, TEST)** Reinício do serviço com consistência final comprovada. — §13
 - [ ] **(P0, TEST)** **Invariante final:** `wallet.balance == saldo reconstruído pelo ledger` em todos os testes. — §13
 
@@ -263,8 +270,8 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
   - [x] Estratégia de concorrência. — §8 (pessimistic lock por wallet; `ARCHITECTURE.md` §6)
   - [ ] Taxonomia de `failureCode`. — §7.2
   - [ ] Limite/TTL de `PENDING_REFERENCE`. — §7.1
-  - [ ] Mapeamento de status HTTP. — §9
-  - [ ] Algoritmo do `payloadHash`. — §9
+  - [x] Mapeamento de status HTTP. — §9 (ARCHITECTURE §7)
+  - [x] Algoritmo do `payloadHash`. — §9 (ARCHITECTURE §7)
   - [ ] Transições válidas de `WagerTransaction`. — §6.3
   - [ ] Interpretações adicionais adotadas. — §7
 

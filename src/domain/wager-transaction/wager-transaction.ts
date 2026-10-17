@@ -1,5 +1,6 @@
 import { InvalidTransactionStateError } from '../errors/invalid-transaction-state.error';
 import { InvalidWagerTransactionError } from '../errors/invalid-wager-transaction.error';
+import { CurrencyMismatchError } from '../errors/currency-mismatch.error';
 import { Money } from '../money/money';
 import { LedgerDirection } from '../wallet/ledger-direction';
 import { WagerTransactionKind, WagerTransactionStatus } from './enums';
@@ -48,6 +49,7 @@ export interface WagerTransactionState {
   readonly referenceTransactionId?: string;
   readonly failureCode?: FailureCode;
   readonly processedAt?: Date;
+  readonly resultBalance?: Money;
   readonly createdAt: Date;
 }
 
@@ -70,6 +72,7 @@ export class WagerTransaction {
     private _referenceTransactionId?: string,
     private _failureCode?: FailureCode,
     private _processedAt?: Date,
+    private _resultBalance?: Money,
   ) {}
 
   static create(props: CreateWagerTransactionProps): WagerTransaction {
@@ -146,6 +149,7 @@ export class WagerTransaction {
       state.referenceTransactionId,
       state.failureCode,
       state.processedAt,
+      state.resultBalance,
     );
   }
 
@@ -163,6 +167,17 @@ export class WagerTransaction {
 
   get processedAt(): Date | undefined {
     return this._processedAt;
+  }
+
+  get resultBalance(): Money | undefined {
+    return this._resultBalance;
+  }
+
+  setResultBalance(money: Money): void {
+    if (money.currency !== this.money.currency) {
+      throw new CurrencyMismatchError(this.money.currency, money.currency);
+    }
+    this._resultBalance = money;
   }
 
   markProcessed(referenceTransactionId: string | undefined, at: Date): void {

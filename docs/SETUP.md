@@ -136,3 +136,49 @@ curl -s "http://localhost:3100/wallets/<walletId>/ledger?limit=50&cursor=<nextCu
 
 Erros de domínio: `400` (payload/moeda inválidos), `404` (wallet inexistente), `409`
 (duplicata `playerId` + `currency`).
+
+## 11. API de Wagering
+
+Submeter uma transação (`BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`). O header
+`Idempotency-Key` é opcional; sem ele a API usa o default
+`"{providerId}:{externalTransactionId}"`.
+
+```bash
+curl -s -X POST http://localhost:3100/wagering/transactions \
+  -H "content-type: application/json" \
+  -H "idempotency-key: provider-a:transaction-123" \
+  -H "authorization: Bearer $TOKEN" \
+  -d '{
+        "providerId":"provider-a",
+        "externalTransactionId":"transaction-123",
+        "playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+        "walletId":"<walletId>",
+        "roundId":"round-987",
+        "gameId":"fortune-chimp",
+        "kind":"BET",
+        "money":{"amount":"25.00","currency":"BRL"}
+      }'
+```
+
+Resposta: `{ "transactionId", "status", "balance", "idempotentReplay", "failureCode?" }`.
+
+Status HTTP por desfecho:
+
+| Situação | Status |
+|---|---|
+| nova transação aplicada (`PROCESSED`) | `201` |
+| replay idempotente | `200` (`idempotentReplay: true`) |
+| aguardando referência (`PENDING_REFERENCE`) | `202` |
+| rejeição por regra de negócio (`REJECTED`) | `422` |
+| conflito de idempotência (mesma key, payload diferente) | `409` |
+| wallet inexistente | `404` |
+| payload inválido | `400` |
+| falha transitória (`FAILED`) | `503` |
+
+Consultar transações:
+
+```bash
+curl -s http://localhost:3100/wagering/transactions/<transactionId> -H "authorization: Bearer $TOKEN"
+curl -s http://localhost:3100/providers/provider-a/wagering/transactions/<externalTransactionId> \
+  -H "authorization: Bearer $TOKEN"
+```
