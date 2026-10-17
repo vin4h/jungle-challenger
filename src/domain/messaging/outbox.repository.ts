@@ -12,4 +12,5 @@ export interface OutboxRepository {
   claimDue(options: ClaimDueOptions): Promise<OutboxMessage[]>;
   markPublished(id: string, publishedAt: Date): Promise<void>;
   scheduleRetry(id: string, nextAttemptAt: Date, attempts: number): Promise<void>;
+  oldestPendingOccurredAt(): Promise<Date | null>;
 }

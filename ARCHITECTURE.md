@@ -279,11 +279,28 @@ false`), nunca corrigidas em silêncio.
 
 ---
 
-## 10. Observabilidade **[PENDENTE]**
+## 10. Observabilidade **[DECIDIDO]**
 
-Logs estruturados JSON (com `correlationId`, `messageId`, `transactionId`, `walletId`,
-`providerId`), métricas e health checks. Health checks já implementados; logs e métricas
-pendentes.
+**Logs:** `StructuredLogger` (implementa `LoggerService`) emite **uma linha JSON** por
+evento (`level`, `time`, `msg`, `context` + campos) e é o logger global da aplicação —
+os `Logger` existentes passam a sair em JSON. Nível por `LOG_LEVEL`; `LOG_PRETTY=true` só
+em dev. Não registramos payloads financeiros completos, apenas ids, `status` e
+`failureCode`.
+
+**Correlação:** `AsyncLocalStorage` (`RequestContext`). O middleware HTTP lê o header
+`X-Correlation-Id` (ou gera um `uuidv7`), abre o contexto e **ecoa o header** na resposta;
+o consumidor SQS abre o contexto com `correlationId = messageId` e o publisher da outbox
+com o `correlationId` do evento. O logger mescla esses campos automaticamente.
+
+**Métricas:** `MetricsRegistry` em memória (counters/histogramas/gauges) exposto em
+`GET /metrics` (texto Prometheus, público). Cobre: `wager_transactions_total{status,kind}`,
+`wager_idempotent_replays_total`, `wager_duplicates_total`, `outbox_published_total`,
+`outbox_retries_total`, `outbox_lag_seconds`, `consumer_messages_total{outcome}`,
+`wager_processing_seconds` e `wallet_lock_wait_seconds`. Como o lock pessimista **bloqueia**
+em vez de falhar, “conflito de lock” é medido como **tempo de espera** na aquisição do
+`SELECT ... FOR UPDATE`.
+
+**Health checks:** separados (`/health/live` e `/health/ready`), já implementados.
 
 ---
 

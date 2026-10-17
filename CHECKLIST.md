@@ -218,16 +218,19 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 
 ## 8. Observabilidade — §12
 
-- [ ] **(P1, IMPL)** **Logs estruturados (JSON)** com `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`. — §12
-- [ ] **(P1, IMPL)** **Sem** dados sensíveis ou payloads financeiros completos nos logs. — §12
-- [ ] **(P1, IMPL)** Métricas mínimas: transações por status. — §12
-- [ ] **(P1, IMPL)** Métricas mínimas: duplicatas detectadas. — §12
-- [ ] **(P1, IMPL)** Métricas mínimas: retries. — §12
-- [ ] **(P1, IMPL)** Métricas mínimas: mensagens em DLQ. — §12
-- [ ] **(P1, IMPL)** Métricas mínimas: conflitos de lock. — §12
-- [ ] **(P1, IMPL)** Métricas mínimas: outbox lag. — §12
-- [ ] **(P1, IMPL)** Métricas mínimas: latência de processamento. — §12
-- [ ] **(P1, IMPL)** Health checks **separados** liveness/readiness. — §12
+- [x] **(P1, IMPL)** **Logs estruturados (JSON)** com `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`. — §12
+- [x] **(P1, IMPL)** **Sem** dados sensíveis ou payloads financeiros completos nos logs. — §12
+  - ✅ só ids, `status` e `failureCode`.
+- [x] **(P1, IMPL)** Métricas mínimas: transações por status. — §12
+- [x] **(P1, IMPL)** Métricas mínimas: duplicatas detectadas. — §12
+- [x] **(P1, IMPL)** Métricas mínimas: retries. — §12
+- [x] **(P1, IMPL)** Métricas mínimas: mensagens em DLQ. — §12
+- [x] **(P1, IMPL)** Métricas mínimas: conflitos de lock. — §12
+  - ✅ `wallet_lock_wait_seconds` (lock pessimista bloqueia; medimos a espera).
+- [x] **(P1, IMPL)** Métricas mínimas: outbox lag. — §12
+- [x] **(P1, IMPL)** Métricas mínimas: latência de processamento. — §12
+- [x] **(P1, IMPL)** Health checks **separados** liveness/readiness. — §12
+  - ✅ `/health/live` e `/health/ready` (desde a fundação).
 - [ ] **(P2, IMPL)** OpenTelemetry e/ou dashboard (opcionais). — §12
 
 ---

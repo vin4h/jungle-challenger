@@ -20,6 +20,8 @@ import type { UnitOfWork } from '../domain/unit-of-work';
 import { WagerTransactionKind } from '../domain/wager-transaction/enums';
 import { UNIT_OF_WORK } from '../infrastructure/persistence/persistence.tokens';
 import { SQS_CLIENT, SQS_QUEUES, type SqsQueueUrls } from '../infrastructure/sqs/sqs.tokens';
+import { MetricsService } from '../observability/metrics.service';
+import { RequestContextStore } from '../observability/request-context';
 import type { ProcessWagerTransactionInput } from './process-wager-transaction.use-case';
 import { ProcessWagerTransactionUseCase } from './process-wager-transaction.use-case';
 import { wagerTransactionMessageSchema, type WagerTransactionMessage } from './wager-message.schema';
@@ -40,6 +42,7 @@ export class SqsWagerConsumer implements OnModuleInit, OnApplicationShutdown {
     @Inject(SQS_QUEUES) private readonly queues: SqsQueueUrls,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
     private readonly useCase: ProcessWagerTransactionUseCase,
+    private readonly metrics: MetricsService,
     config: ConfigService,
   ) {
     this.enabled = config.get<boolean>('SQS_CONSUMER_ENABLED') ?? false;
@@ -123,16 +126,22 @@ export class SqsWagerConsumer implements OnModuleInit, OnApplicationShutdown {
       parsed = wagerTransactionMessageSchema.parse(JSON.parse(body));
     } catch {
       this.logger.warn(`Moving malformed message ${message.MessageId ?? 'unknown'} to the DLQ`);
+      this.metrics.consumerOutcome('dlq');
       await this.sendToDlq(message);
       await this.deleteMessage(receiptHandle);
       return;
     }
 
     try {
-      await this.process(parsed);
+      const outcome = await RequestContextStore.run(
+        { correlationId: parsed.messageId, messageId: parsed.messageId },
+        () => this.process(parsed),
+      );
+      this.metrics.consumerOutcome(outcome);
       await this.deleteMessage(receiptHandle);
     } catch (error) {
       if (error instanceof DomainError) {
+        this.metrics.consumerOutcome('business_error');
         this.logger.warn(`Rejecting message ${parsed.messageId}: ${error.code}`);
         await this.deleteMessage(receiptHandle);
         return;
@@ -141,11 +150,11 @@ export class SqsWagerConsumer implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  private async process(message: WagerTransactionMessage): Promise<void> {
+  private async process(message: WagerTransactionMessage): Promise<'processed' | 'duplicate'> {
     const receivedAt = new Date();
     const hash = payloadHash(message.data);
 
-    await this.unitOfWork.run(async (repositories) => {
+    return this.unitOfWork.run(async (repositories) => {
       const inbox = InboxMessage.receive({
         messageId: message.messageId,
         consumerName: WAGER_CONSUMER_NAME,
@@ -156,11 +165,12 @@ export class SqsWagerConsumer implements OnModuleInit, OnApplicationShutdown {
       const inserted = await repositories.inbox.tryInsert(inbox);
       if (!inserted) {
         this.logger.debug(`Skipping duplicate message ${message.messageId}`);
-        return;
+        return 'duplicate';
       }
 
       await this.useCase.executeWithin(repositories, toInput(message));
       await repositories.inbox.markProcessed(WAGER_CONSUMER_NAME, message.messageId, new Date());
+      return 'processed';
     });
   }
 

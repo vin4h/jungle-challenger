@@ -37,6 +37,10 @@ export const envSchema = z.object({
   PENDING_REFERENCE_BACKOFF_MS: z.coerce.number().int().min(0).default(30000),
   PENDING_REFERENCE_MAX_BACKOFF_MS: z.coerce.number().int().min(0).default(3600000),
 
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  LOG_PRETTY: envBoolean(false),
+  METRICS_ENABLED: envBoolean(true),
+
   AUTH_ENABLED: envBoolean(true),
   KEYCLOAK_ISSUER: z.string().url(),
   KEYCLOAK_AUDIENCE: z.string().min(1).default('account'),

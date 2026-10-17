@@ -255,3 +255,22 @@ curl -s -X POST http://localhost:3100/wallets/<walletId>/reconciliation \
 ```
 
 Divergências não são corrigidas: vêm com `consistent: false` e o `difference`.
+
+## 15. Observabilidade
+
+Logs JSON e métricas são configuráveis por env:
+
+```
+LOG_LEVEL=info
+LOG_PRETTY=false
+METRICS_ENABLED=true
+```
+
+Os logs saem como uma linha JSON por evento, já com `correlationId`/`messageId` herdados
+do contexto. O header `X-Correlation-Id` é aceito na entrada e ecoado na resposta.
+
+Métricas em formato texto Prometheus (público):
+
+```bash
+curl -s http://localhost:3100/metrics
+```

@@ -58,4 +58,11 @@ export class TypeOrmOutboxRepository implements OutboxRepository {
       { nextAttemptAt, attempts, claimedUntil: null },
     );
   }
+
+  async oldestPendingOccurredAt(): Promise<Date | null> {
+    const rows = await this.manager.query<Array<{ occurred_at: Date | null }>>(
+      `SELECT MIN("occurred_at") AS "occurred_at" FROM "outbox_messages" WHERE "published_at" IS NULL`,
+    );
+    return rows[0]?.occurred_at ?? null;
+  }
 }

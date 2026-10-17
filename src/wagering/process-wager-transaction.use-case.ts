@@ -23,6 +23,8 @@ import { WagerTransactionKind, WagerTransactionStatus } from '../domain/wager-tr
 import { FailureCode } from '../domain/wager-transaction/failure-code';
 import { WagerTransaction } from '../domain/wager-transaction/wager-transaction';
 import { UNIT_OF_WORK } from '../infrastructure/persistence/persistence.tokens';
+import { MetricsService } from '../observability/metrics.service';
+import { StructuredLogger } from '../observability/structured-logger';
 
 export interface ProcessWagerTransactionInput {
   readonly providerId: string;
@@ -67,6 +69,8 @@ export class ProcessWagerTransactionUseCase {
 
   constructor(
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
+    private readonly metrics: MetricsService,
+    private readonly logger: StructuredLogger,
     config: ConfigService,
   ) {
     this.maxReferenceAttempts = config.get<number>('PENDING_REFERENCE_MAX_ATTEMPTS') ?? 10;
@@ -79,6 +83,7 @@ export class ProcessWagerTransactionUseCase {
       return await this.unitOfWork.run((repositories) => this.executeWithin(repositories, input));
     } catch (error) {
       if (error instanceof DuplicateWagerTransactionError) {
+        this.metrics.duplicate();
         const hash = this.computePayloadHash(input, Money.from(input.money));
         const existing = await this.unitOfWork.run((repositories) =>
           repositories.transactions.findByIdempotencyKey(input.idempotencyKey),
@@ -95,6 +100,7 @@ export class ProcessWagerTransactionUseCase {
     repositories: Repositories,
     input: ProcessWagerTransactionInput,
   ): Promise<WageringOutcome> {
+    const startedAt = Date.now();
     const money = Money.from(input.money);
     const occurredAt = new Date();
     const hash = this.computePayloadHash(input, money);
@@ -104,7 +110,9 @@ export class ProcessWagerTransactionUseCase {
       return this.replayOrConflict(existing, hash, input.idempotencyKey);
     }
 
+    const lockStartedAt = Date.now();
     const wallet = await repositories.wallets.findById(input.walletId, { forUpdate: true });
+    this.metrics.walletLockWait((Date.now() - lockStartedAt) / 1000);
     if (!wallet) {
       throw new WalletNotFoundError(input.walletId);
     }
@@ -180,6 +188,7 @@ export class ProcessWagerTransactionUseCase {
       );
     }
 
+    this.recordOutcome(transaction, input.providerId, (Date.now() - startedAt) / 1000);
     return { transaction, idempotentReplay: false };
   }
 
@@ -191,6 +200,7 @@ export class ProcessWagerTransactionUseCase {
   ): Promise<void> {
     const events: IntegrationEvent<unknown>[] = [];
     const correlationId = transaction.id;
+    const startedAt = Date.now();
     const reference = await repositories.transactions.findByProviderAndExternalId(
       transaction.providerId as string,
       transaction.referenceExternalTransactionId as string,
@@ -215,6 +225,7 @@ export class ProcessWagerTransactionUseCase {
         await repositories.outbox.enqueue(
           events.map((event) => OutboxMessage.enqueue(event, { createdAt: now })),
         );
+        this.recordOutcome(transaction, transaction.providerId ?? '', (Date.now() - startedAt) / 1000);
       }
       return;
     }
@@ -228,6 +239,7 @@ export class ProcessWagerTransactionUseCase {
       await repositories.outbox.enqueue(
         events.map((event) => OutboxMessage.enqueue(event, { createdAt: now })),
       );
+      this.recordOutcome(transaction, transaction.providerId ?? '', (Date.now() - startedAt) / 1000);
       return;
     }
 
@@ -246,6 +258,7 @@ export class ProcessWagerTransactionUseCase {
     await repositories.outbox.enqueue(
       events.map((event) => OutboxMessage.enqueue(event, { createdAt: now })),
     );
+    this.recordOutcome(transaction, transaction.providerId ?? '', (Date.now() - startedAt) / 1000);
   }
 
   private async dispatch(repositories: Repositories, context: DispatchContext): Promise<void> {
@@ -394,7 +407,20 @@ export class ProcessWagerTransactionUseCase {
     if (!existing.matchesPayload(payloadHashValue)) {
       throw new IdempotencyConflictError(idempotencyKey);
     }
+    this.metrics.idempotentReplay();
     return { transaction: existing, idempotentReplay: true };
+  }
+
+  private recordOutcome(transaction: WagerTransaction, providerId: string, seconds: number): void {
+    this.metrics.wagerProcessed(transaction.status, transaction.kind, seconds);
+    this.logger.event('info', 'wager transaction settled', {
+      transactionId: transaction.id,
+      walletId: transaction.walletId,
+      providerId,
+      status: transaction.status,
+      kind: transaction.kind,
+      ...(transaction.failureCode ? { failureCode: transaction.failureCode } : {}),
+    });
   }
 
   private eventContext(correlationId: string, occurredAt: Date): EventContext {

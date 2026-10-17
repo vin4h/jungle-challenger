@@ -10,6 +10,7 @@ import type { UnitOfWork } from '../domain/unit-of-work';
 import type { WagerTransaction } from '../domain/wager-transaction/wager-transaction';
 import { WagerTransactionStatus } from '../domain/wager-transaction/enums';
 import { UNIT_OF_WORK } from '../infrastructure/persistence/persistence.tokens';
+import { MetricsService } from '../observability/metrics.service';
 import { ProcessWagerTransactionUseCase } from './process-wager-transaction.use-case';
 
 @Injectable()
@@ -24,6 +25,7 @@ export class PendingReferenceWorker implements OnModuleInit, OnApplicationShutdo
   constructor(
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
     private readonly useCase: ProcessWagerTransactionUseCase,
+    private readonly metrics: MetricsService,
     config: ConfigService,
   ) {
     this.enabled = config.get<boolean>('PENDING_REFERENCE_WORKER_ENABLED') ?? false;
@@ -74,7 +76,9 @@ export class PendingReferenceWorker implements OnModuleInit, OnApplicationShutdo
 
   private async resume(transaction: WagerTransaction, now: Date): Promise<number> {
     return this.unitOfWork.run(async (repositories) => {
+      const lockStartedAt = Date.now();
       const wallet = await repositories.wallets.findById(transaction.walletId, { forUpdate: true });
+      this.metrics.walletLockWait((Date.now() - lockStartedAt) / 1000);
       if (!wallet) {
         return 0;
       }

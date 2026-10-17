@@ -17,6 +17,7 @@ import { UNIT_OF_WORK } from '../../src/infrastructure/persistence/persistence.t
 import { SQS_CLIENT, SQS_QUEUES, type SqsQueueUrls } from '../../src/infrastructure/sqs/sqs.tokens';
 import { EVENT_PUBLISHER } from '../../src/messaging/messaging.tokens';
 import { OutboxPublisher } from '../../src/messaging/outbox-publisher.service';
+import { MetricsService } from '../../src/observability/metrics.service';
 
 const runIntegration = process.env.RUN_INTEGRATION === '1';
 const suite = runIntegration ? describe : describe.skip;
@@ -189,7 +190,7 @@ suite('outbox publisher (integration)', () => {
     }
     expect(await pendingFor(wallet.id)).toBe(6);
 
-    const second = new OutboxPublisher(unitOfWork, eventPublisher, config);
+    const second = new OutboxPublisher(unitOfWork, eventPublisher, app.get(MetricsService), config);
     await Promise.all([
       publisher.publishOnce(),
       second.publishOnce(),

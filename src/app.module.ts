@@ -11,6 +11,7 @@ import { DomainExceptionFilter } from './wallets/domain-exception.filter';
 import { WalletsModule } from './wallets/wallets.module';
 import { WageringModule } from './wagering/wagering.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { ObservabilityModule } from './observability/observability.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { MessagingModule } from './messaging/messaging.module';
       envFilePath: ['.env.local', '.env'],
       validate: validateEnv,
     }),
+    ObservabilityModule,
     DatabaseModule,
     SqsModule,
     AuthModule,
