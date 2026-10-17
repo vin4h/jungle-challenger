@@ -6,6 +6,7 @@ import type {
   FindWalletOptions,
   LedgerCursor,
   LedgerEntriesPage,
+  LedgerSum,
   ListLedgerEntriesOptions,
   WalletRepository,
 } from '../../domain/wallet/wallet.repository';
@@ -88,5 +89,17 @@ export class TypeOrmWalletRepository implements WalletRepository {
       hasMore && last ? { createdAt: last.createdAt, id: last.id } : undefined;
 
     return { entries: page.map(LedgerEntryMapper.toDomain), nextCursor };
+  }
+
+  async sumLedger(walletId: string): Promise<LedgerSum> {
+    const rows = await this.manager.query<Array<{ balance: string; entries: number }>>(
+      `SELECT COALESCE(SUM(CASE WHEN "direction" = 'CREDIT' THEN "amount" ELSE -"amount" END), 0)::numeric(18,2)::text AS "balance",
+              COUNT(*)::int AS "entries"
+         FROM "wallet_ledger_entries"
+        WHERE "wallet_id" = $1`,
+      [walletId],
+    );
+    const row = rows[0];
+    return { balanceAmount: row?.balance ?? '0.00', entries: row?.entries ?? 0 };
   }
 }

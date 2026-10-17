@@ -131,15 +131,15 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [x] **(P0, IMPL)** Valor de `REFUND`/`ROLLBACK` **igual** ao da referência (sem reversão parcial). — §7.5
 - [x] **(P0, IMPL)** `REJECTED` não altera saldo nem gera ledger. — §7.6
 - [x] **(P0, IMPL)** Repetir operação já processada → **resultado original** (saldo observado no momento). — §7.7
-- [ ] **(P0, IMPL)** Referência ausente → persistir `PENDING_REFERENCE` e reprocessar. — §7.8
-  - parcial: persiste `PENDING_REFERENCE` + evento; o reprocessamento é o worker do §3.3.
+- [x] **(P0, IMPL)** Referência ausente → persistir `PENDING_REFERENCE` e reprocessar. — §7.8
 - [x] **(P0, IMPL)** Reversão que geraria saldo negativo → **rejeitada** com `failureCode` **distinto** do de aposta sem saldo, e auditável. — §7.9
 - [x] **(P1, DOC)** Documentar interpretações adicionais adotadas. — §7
 
 ### 3.3 Referências fora de ordem — §7.1
-- [ ] **(P0, IMPL)** Worker agendado reprocessa `PENDING_REFERENCE` com **backoff exponencial**. — §7.1
-- [ ] **(P0, IMPL)** Limite de tentativas/TTL definido. — §7.1
-- [ ] **(P0, IMPL)** Ao esgotar: `REJECTED` com `failureCode` de referência inexistente + evento publicado. — §7.1
+- [x] **(P0, IMPL)** Worker agendado reprocessa `PENDING_REFERENCE` com **backoff exponencial**. — §7.1
+- [x] **(P0, IMPL)** Limite de tentativas/TTL definido. — §7.1
+  - ✅ 10 tentativas, backoff 30s→1h (configurável por env).
+- [x] **(P0, IMPL)** Ao esgotar: `REJECTED` com `failureCode` de referência inexistente + evento publicado. — §7.1
 
 ### 3.4 Códigos de falha — §7.2
 - [x] **(P1, IMPL)** Definir taxonomia de `failureCode` **estável e machine-readable**. — §7.2
@@ -173,7 +173,8 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
   - CA: requisição idêntica → **mesma resposta** + `idempotentReplay: true`. ✅
   - CA: mesma key + payload diferente → **conflito** (não replay). ✅
 - [x] **(P1, DOC)** Documentar o algoritmo do `payloadHash`. — §9
-- [ ] **(P0, IMPL)** `POST /wallets/:walletId/reconciliation` — divergências **não** corrigidas em silêncio: logar + métrica + sinalizar na resposta. — §9
+- [x] **(P0, IMPL)** `POST /wallets/:walletId/reconciliation` — divergências **não** corrigidas em silêncio: logar + métrica + sinalizar na resposta. — §9
+  - ✅ divergência logada e sinalizada (`consistent:false`); métrica fica na observabilidade.
 - [x] **(P0, IMPL)** `GET /health/live` (processo vivo). — §9
 - [x] **(P0, IMPL)** `GET /health/ready` (PG e SQS alcançáveis). — §9
 - [x] **(P1, IMPL)** Mapeamento de status HTTP distinguindo, de forma **consistente em todos os endpoints**: payload inválido, conflito de idempotência, rejeição de negócio, aceite pendente e falha transitória. — §9
@@ -276,7 +277,7 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
   - [x] ORM escolhido, mapeamento do `Money` e estratégia transacional. — §4
   - [x] Estratégia de concorrência. — §8 (pessimistic lock por wallet; `ARCHITECTURE.md` §6)
   - [ ] Taxonomia de `failureCode`. — §7.2
-  - [ ] Limite/TTL de `PENDING_REFERENCE`. — §7.1
+  - [x] Limite/TTL de `PENDING_REFERENCE`. — §7.1 (10 tentativas, backoff 30s→1h)
   - [x] Mapeamento de status HTTP. — §9 (ARCHITECTURE §7)
   - [x] Algoritmo do `payloadHash`. — §9 (ARCHITECTURE §7)
   - [ ] Transições válidas de `WagerTransaction`. — §6.3

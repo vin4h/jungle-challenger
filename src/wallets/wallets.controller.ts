@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { decodeCursor, encodeCursor } from './ledger-cursor';
 import { CreateWalletDto } from './dto/create-wallet.dto';
 import { LedgerQueryDto } from './dto/ledger-query.dto';
 import {
   toLedgerEntryResponse,
+  toReconciliationResponse,
   toWalletResponse,
   type LedgerResponse,
+  type ReconciliationResponse,
   type WalletResponse,
 } from './wallet.presenter';
 import { WalletService } from './wallet.service';
@@ -42,5 +44,12 @@ export class WalletsController {
       entries: page.entries.map(toLedgerEntryResponse),
       nextCursor: page.nextCursor ? encodeCursor(page.nextCursor) : null,
     };
+  }
+
+  @Post(':walletId/reconciliation')
+  @HttpCode(HttpStatus.OK)
+  async reconcile(@Param('walletId') walletId: string): Promise<ReconciliationResponse> {
+    const result = await this.walletService.reconcile(walletId);
+    return toReconciliationResponse(result);
   }
 }

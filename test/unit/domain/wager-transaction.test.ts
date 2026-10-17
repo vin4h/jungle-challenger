@@ -173,4 +173,27 @@ describe('WagerTransaction', () => {
       expect(opening.isTerminal()).toBe(true);
     });
   });
+
+  describe('reference retry', () => {
+    it('starts with no attempts', () => {
+      const refund = createTransaction(WagerTransactionKind.Refund, {
+        referenceExternalTransactionId: 'x',
+      });
+      expect(refund.referenceAttempts).toBe(0);
+      expect(refund.referenceNextAttemptAt).toBeUndefined();
+    });
+
+    it('increments attempts and schedules the next try', () => {
+      const refund = createTransaction(WagerTransactionKind.Refund, {
+        referenceExternalTransactionId: 'x',
+      });
+      const next = new Date(AT.getTime() + 30_000);
+      refund.scheduleReferenceRetry(next);
+      expect(refund.referenceAttempts).toBe(1);
+      expect(refund.referenceNextAttemptAt).toBe(next);
+
+      refund.scheduleReferenceRetry(next);
+      expect(refund.referenceAttempts).toBe(2);
+    });
+  });
 });

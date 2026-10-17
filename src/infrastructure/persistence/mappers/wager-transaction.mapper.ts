@@ -30,6 +30,8 @@ export const WagerTransactionMapper = {
               currency: entity.resultBalanceCurrency,
             })
           : undefined,
+      referenceAttempts: entity.referenceAttempts,
+      referenceNextAttemptAt: entity.referenceNextAttemptAt ?? undefined,
       createdAt: entity.createdAt,
     });
   },
@@ -54,6 +56,8 @@ export const WagerTransactionMapper = {
       failureCode: transaction.failureCode ?? null,
       resultBalanceAmount: transaction.resultBalance?.toString() ?? null,
       resultBalanceCurrency: transaction.resultBalance?.currency ?? null,
+      referenceAttempts: transaction.referenceAttempts,
+      referenceNextAttemptAt: transaction.referenceNextAttemptAt ?? null,
       processedAt: transaction.processedAt ?? null,
       createdAt: transaction.createdAt,
     });

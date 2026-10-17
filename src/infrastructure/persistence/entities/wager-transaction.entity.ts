@@ -56,6 +56,12 @@ export class WagerTransactionEntity {
   @Column('char', { length: 3, nullable: true })
   resultBalanceCurrency!: string | null;
 
+  @Column('int')
+  referenceAttempts!: number;
+
+  @Column('timestamptz', { nullable: true })
+  referenceNextAttemptAt!: Date | null;
+
   @Column('timestamptz', { nullable: true })
   processedAt!: Date | null;
 

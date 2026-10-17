@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 import { WalletAlreadyExistsError } from '../domain/errors/wallet-already-exists.error';
 import { WalletNotFoundError } from '../domain/errors/wallet-not-found.error';
@@ -15,8 +15,19 @@ export interface CreateWalletInput {
   readonly initialBalance: { readonly amount: string; readonly currency: string };
 }
 
+export interface ReconciliationResult {
+  readonly walletId: string;
+  readonly storedBalance: Money;
+  readonly calculatedBalance: Money;
+  readonly difference: Money;
+  readonly consistent: boolean;
+  readonly checkedEntries: number;
+}
+
 @Injectable()
 export class WalletService {
+  private readonly logger = new Logger(WalletService.name);
+
   constructor(@Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork) {}
 
   async createWallet(input: CreateWalletInput): Promise<Wallet> {
@@ -90,6 +101,38 @@ export class WalletService {
         throw new WalletNotFoundError(walletId);
       }
       return wallets.listLedgerEntries(walletId, options);
+    });
+  }
+
+  async reconcile(walletId: string): Promise<ReconciliationResult> {
+    return this.unitOfWork.run(async ({ wallets }) => {
+      const wallet = await wallets.findById(walletId);
+      if (!wallet) {
+        throw new WalletNotFoundError(walletId);
+      }
+
+      const { balanceAmount, entries } = await wallets.sumLedger(walletId);
+      const calculatedBalance = Money.rehydrate({
+        amount: balanceAmount,
+        currency: wallet.currency,
+      });
+      const difference = wallet.balance.subtract(calculatedBalance);
+      const consistent = difference.isZero();
+
+      if (!consistent) {
+        this.logger.warn(
+          `Wallet ${walletId} is inconsistent: stored=${wallet.balance.toString()} ledger=${calculatedBalance.toString()}`,
+        );
+      }
+
+      return {
+        walletId,
+        storedBalance: wallet.balance,
+        calculatedBalance,
+        difference,
+        consistent,
+        checkedEntries: entries,
+      };
     });
   }
 }

@@ -20,6 +20,11 @@ export interface LedgerEntriesPage {
   readonly nextCursor?: LedgerCursor;
 }
 
+export interface LedgerSum {
+  readonly balanceAmount: string;
+  readonly entries: number;
+}
+
 export interface WalletRepository {
   findById(id: string, options?: FindWalletOptions): Promise<Wallet | null>;
   findByPlayerIdAndCurrency(playerId: string, currency: string): Promise<Wallet | null>;
@@ -27,4 +32,5 @@ export interface WalletRepository {
   update(wallet: Wallet): Promise<void>;
   insertLedgerEntries(entries: readonly WalletLedgerEntry[]): Promise<void>;
   listLedgerEntries(walletId: string, options: ListLedgerEntriesOptions): Promise<LedgerEntriesPage>;
+  sumLedger(walletId: string): Promise<LedgerSum>;
 }

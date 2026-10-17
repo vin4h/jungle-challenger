@@ -46,6 +46,19 @@ export class TypeOrmWagerTransactionRepository implements WagerTransactionReposi
     return entity ? WagerTransactionMapper.toDomain(entity) : null;
   }
 
+  async listDuePendingReferences(now: Date, limit: number): Promise<WagerTransaction[]> {
+    const entities = await this.manager
+      .createQueryBuilder(WagerTransactionEntity, 'tx')
+      .where('tx.status = :status', { status: WagerTransactionStatus.PendingReference })
+      .andWhere('(tx.referenceNextAttemptAt IS NULL OR tx.referenceNextAttemptAt <= :now)', {
+        now,
+      })
+      .orderBy('tx.createdAt', 'ASC')
+      .take(limit)
+      .getMany();
+    return entities.map(WagerTransactionMapper.toDomain);
+  }
+
   async insert(transaction: WagerTransaction): Promise<void> {
     try {
       await this.manager.insert(WagerTransactionEntity, WagerTransactionMapper.toRow(transaction));
@@ -67,6 +80,8 @@ export class TypeOrmWagerTransactionRepository implements WagerTransactionReposi
         failureCode: transaction.failureCode ?? null,
         resultBalanceAmount: transaction.resultBalance?.toString() ?? null,
         resultBalanceCurrency: transaction.resultBalance?.currency ?? null,
+        referenceAttempts: transaction.referenceAttempts,
+        referenceNextAttemptAt: transaction.referenceNextAttemptAt ?? null,
         processedAt: transaction.processedAt ?? null,
       },
     );

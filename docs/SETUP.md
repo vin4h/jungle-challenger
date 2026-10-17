@@ -229,3 +229,29 @@ awslocal sqs receive-message \
   --message-attribute-names All \
   --attribute-names All
 ```
+
+## 14. Worker de referências e reconciliação
+
+O `PendingReferenceWorker` reprocessa transações `PENDING_REFERENCE` (REFUND/ROLLBACK que
+chegaram antes da referência). Fica **desligado** por padrão:
+
+```
+PENDING_REFERENCE_WORKER_ENABLED=true
+PENDING_REFERENCE_BATCH_SIZE=20
+PENDING_REFERENCE_INTERVAL_MS=5000
+PENDING_REFERENCE_MAX_ATTEMPTS=10
+PENDING_REFERENCE_BACKOFF_MS=30000
+PENDING_REFERENCE_MAX_BACKOFF_MS=3600000
+```
+
+Esgotado o limite de tentativas, a transação vira `REJECTED` com
+`failureCode = REFERENCE_NOT_FOUND` e um `WagerTransactionRejected` é publicado.
+
+Reconciliação (saldo materializado × saldo reconstruído pelo ledger):
+
+```bash
+curl -s -X POST http://localhost:3100/wallets/<walletId>/reconciliation \
+  -H "authorization: Bearer $TOKEN"
+```
+
+Divergências não são corrigidas: vêm com `consistent: false` e o `difference`.

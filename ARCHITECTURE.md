@@ -262,8 +262,20 @@ são públicos para testes. O consumidor só sobe com `SQS_CONSUMER_ENABLED=true
 `ContentBasedDeduplication` continua **desligado**: a garantia é o inbox no banco, não o
 broker.
 
-**Pendente (slice seguinte):** o worker de `PENDING_REFERENCE` (10 tentativas, backoff
-30s→1h) e o endpoint de reconciliação.
+**Worker de `PENDING_REFERENCE`:** um worker por intervalo (`PENDING_REFERENCE_WORKER_ENABLED`)
+varre transações devidas (`status = PENDING_REFERENCE` e `reference_next_attempt_at` nulo ou
+vencido). Para cada uma, sob o lock da wallet, recarrega a transação e só age se ainda
+estiver pendente; resolve a referência e, se **achou e é válida**, lança a movimentação
+invertida + ledger + eventos; se **achou e é inválida**, rejeita com o `failureCode`
+correspondente; se **não achou**, agenda `reference_next_attempt_at` com backoff
+exponencial (base 30s, cap 1h) e, esgotado o limite (10 tentativas), o resultado é
+`REJECTED/REFERENCE_NOT_FOUND` + `WagerTransactionRejected`. A política (limite/backoff)
+vive no use case.
+
+**Reconciliação:** `POST /wallets/:walletId/reconciliation` reconstrói o saldo pelo
+ledger com `SUM(CREDIT − DEBIT)` + `COUNT(*)` (numérico exato) e compara com o saldo
+materializado. Divergências são **logadas e sinalizadas na resposta** (`consistent:
+false`), nunca corrigidas em silêncio.
 
 ---
 

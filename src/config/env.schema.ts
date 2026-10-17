@@ -30,6 +30,13 @@ export const envSchema = z.object({
   OUTBOX_PUBLISHER_INTERVAL_MS: z.coerce.number().int().min(50).default(1000),
   OUTBOX_LEASE_MS: z.coerce.number().int().min(1000).default(30000),
 
+  PENDING_REFERENCE_WORKER_ENABLED: envBoolean(false),
+  PENDING_REFERENCE_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  PENDING_REFERENCE_INTERVAL_MS: z.coerce.number().int().min(50).default(5000),
+  PENDING_REFERENCE_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(10),
+  PENDING_REFERENCE_BACKOFF_MS: z.coerce.number().int().min(0).default(30000),
+  PENDING_REFERENCE_MAX_BACKOFF_MS: z.coerce.number().int().min(0).default(3600000),
+
   AUTH_ENABLED: envBoolean(true),
   KEYCLOAK_ISSUER: z.string().url(),
   KEYCLOAK_AUDIENCE: z.string().min(1).default('account'),

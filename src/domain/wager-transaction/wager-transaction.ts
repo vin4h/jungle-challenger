@@ -50,6 +50,8 @@ export interface WagerTransactionState {
   readonly failureCode?: FailureCode;
   readonly processedAt?: Date;
   readonly resultBalance?: Money;
+  readonly referenceAttempts?: number;
+  readonly referenceNextAttemptAt?: Date;
   readonly createdAt: Date;
 }
 
@@ -73,6 +75,8 @@ export class WagerTransaction {
     private _failureCode?: FailureCode,
     private _processedAt?: Date,
     private _resultBalance?: Money,
+    private _referenceAttempts = 0,
+    private _referenceNextAttemptAt?: Date,
   ) {}
 
   static create(props: CreateWagerTransactionProps): WagerTransaction {
@@ -150,6 +154,8 @@ export class WagerTransaction {
       state.failureCode,
       state.processedAt,
       state.resultBalance,
+      state.referenceAttempts ?? 0,
+      state.referenceNextAttemptAt,
     );
   }
 
@@ -171,6 +177,20 @@ export class WagerTransaction {
 
   get resultBalance(): Money | undefined {
     return this._resultBalance;
+  }
+
+  get referenceAttempts(): number {
+    return this._referenceAttempts;
+  }
+
+  get referenceNextAttemptAt(): Date | undefined {
+    return this._referenceNextAttemptAt;
+  }
+
+  scheduleReferenceRetry(nextAttemptAt: Date): void {
+    this.assertNotTerminal('scheduleReferenceRetry');
+    this._referenceAttempts += 1;
+    this._referenceNextAttemptAt = nextAttemptAt;
   }
 
   setResultBalance(money: Money): void {

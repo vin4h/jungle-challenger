@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { v7 as uuidv7 } from 'uuid';
 import { DuplicateWagerTransactionError } from '../domain/errors/duplicate-wager-transaction.error';
 import { IdempotencyConflictError } from '../domain/errors/idempotency-conflict.error';
@@ -12,6 +13,7 @@ import { WalletBalanceChanged } from '../domain/messaging/events/wallet-balance-
 import type { IntegrationEvent } from '../domain/messaging/integration-event';
 import { OutboxMessage } from '../domain/messaging/outbox-message';
 import { Money } from '../domain/money/money';
+import { exponentialBackoff } from '../domain/shared/backoff';
 import { payloadHash } from '../domain/shared/hash';
 import type { Repositories, UnitOfWork } from '../domain/unit-of-work';
 import { LedgerDirection } from '../domain/wallet/ledger-direction';
@@ -59,7 +61,18 @@ interface DispatchContext {
 
 @Injectable()
 export class ProcessWagerTransactionUseCase {
-  constructor(@Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork) {}
+  private readonly maxReferenceAttempts: number;
+  private readonly referenceBackoffMs: number;
+  private readonly referenceMaxBackoffMs: number;
+
+  constructor(
+    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
+    config: ConfigService,
+  ) {
+    this.maxReferenceAttempts = config.get<number>('PENDING_REFERENCE_MAX_ATTEMPTS') ?? 10;
+    this.referenceBackoffMs = config.get<number>('PENDING_REFERENCE_BACKOFF_MS') ?? 30000;
+    this.referenceMaxBackoffMs = config.get<number>('PENDING_REFERENCE_MAX_BACKOFF_MS') ?? 3600000;
+  }
 
   async execute(input: ProcessWagerTransactionInput): Promise<WageringOutcome> {
     try {
@@ -168,6 +181,71 @@ export class ProcessWagerTransactionUseCase {
     }
 
     return { transaction, idempotentReplay: false };
+  }
+
+  async resumePendingReferenceWithin(
+    repositories: Repositories,
+    transaction: WagerTransaction,
+    wallet: Wallet,
+    now: Date,
+  ): Promise<void> {
+    const events: IntegrationEvent<unknown>[] = [];
+    const correlationId = transaction.id;
+    const reference = await repositories.transactions.findByProviderAndExternalId(
+      transaction.providerId as string,
+      transaction.referenceExternalTransactionId as string,
+    );
+
+    if (!reference) {
+      const attempts = transaction.referenceAttempts + 1;
+      if (attempts >= this.maxReferenceAttempts) {
+        transaction.reject(FailureCode.ReferenceNotFound);
+        transaction.setResultBalance(wallet.balance);
+        events.push(WagerTransactionRejected.from(transaction, this.eventContext(correlationId, now)));
+      } else {
+        transaction.scheduleReferenceRetry(
+          new Date(
+            now.getTime() +
+              exponentialBackoff(attempts, this.referenceBackoffMs, this.referenceMaxBackoffMs),
+          ),
+        );
+      }
+      await repositories.transactions.update(transaction);
+      if (events.length > 0) {
+        await repositories.outbox.enqueue(
+          events.map((event) => OutboxMessage.enqueue(event, { createdAt: now })),
+        );
+      }
+      return;
+    }
+
+    const failure = await this.validateReversal(repositories, transaction, reference);
+    if (failure) {
+      transaction.reject(failure);
+      transaction.setResultBalance(wallet.balance);
+      events.push(WagerTransactionRejected.from(transaction, this.eventContext(correlationId, now)));
+      await repositories.transactions.update(transaction);
+      await repositories.outbox.enqueue(
+        events.map((event) => OutboxMessage.enqueue(event, { createdAt: now })),
+      );
+      return;
+    }
+
+    const entry =
+      transaction.ledgerDirectionFor(reference) === LedgerDirection.Debit
+        ? wallet.debit(transaction.money, this.movementContext(transaction.id, now))
+        : wallet.credit(transaction.money, this.movementContext(transaction.id, now));
+    transaction.markProcessed(reference.id, now);
+    transaction.setResultBalance(wallet.balance);
+    events.push(WalletBalanceChanged.from(wallet, entry, this.eventContext(correlationId, now)));
+    events.push(WagerTransactionProcessed.from(transaction, this.eventContext(correlationId, now)));
+
+    await repositories.transactions.update(transaction);
+    await repositories.wallets.insertLedgerEntries([entry]);
+    await repositories.wallets.update(wallet);
+    await repositories.outbox.enqueue(
+      events.map((event) => OutboxMessage.enqueue(event, { createdAt: now })),
+    );
   }
 
   private async dispatch(repositories: Repositories, context: DispatchContext): Promise<void> {

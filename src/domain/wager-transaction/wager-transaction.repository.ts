@@ -12,6 +12,7 @@ export interface WagerTransactionRepository {
     referenceTransactionId: string,
     kind: WagerTransactionKind,
   ): Promise<WagerTransaction | null>;
+  listDuePendingReferences(now: Date, limit: number): Promise<WagerTransaction[]>;
   insert(transaction: WagerTransaction): Promise<void>;
   update(transaction: WagerTransaction): Promise<void>;
 }
