@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { v7 as uuidv7 } from 'uuid';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module';
+import { assertWalletMatchesLedger } from './support/ledger-consistency';
 
 const runIntegration = process.env.RUN_INTEGRATION === '1';
 const suite = runIntegration ? describe : describe.skip;
@@ -129,6 +130,7 @@ suite('wagering (integration)', () => {
       'WagerTransactionProcessed',
       'WalletBalanceChanged',
     ]);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('rejects a BET with insufficient funds without touching the ledger', async () => {
@@ -143,6 +145,7 @@ suite('wagering (integration)', () => {
     expect(await balance(wallet.id)).toBe('10.00');
     expect(await ledgerCounts(wallet.id)).toEqual({ DEBIT: 0, CREDIT: 1 });
     expect(await outboxEvents(wallet.id)).toEqual(['WagerTransactionRejected']);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('processes a WIN as a credit', async () => {
@@ -153,6 +156,7 @@ suite('wagering (integration)', () => {
     expect(result.status).toBe('PROCESSED');
     expect(result.balance.amount).toBe('150.00');
     expect(await ledgerCounts(wallet.id)).toEqual({ DEBIT: 0, CREDIT: 2 });
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('processes a LOSS without a ledger entry or balance change', async () => {
@@ -164,6 +168,7 @@ suite('wagering (integration)', () => {
     expect(result.balance.amount).toBe('100.00');
     expect(await ledgerCounts(wallet.id)).toEqual({ DEBIT: 0, CREDIT: 1 });
     expect(await outboxEvents(wallet.id)).toEqual(['WagerTransactionProcessed']);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('replays an identical request without duplicating effects', async () => {
@@ -186,6 +191,7 @@ suite('wagering (integration)', () => {
     expect(secondBody.transactionId).toBe(firstBody.transactionId);
     expect(secondBody.balance.amount).toBe('70.00');
     expect(await ledgerCounts(wallet.id)).toEqual({ DEBIT: 1, CREDIT: 1 });
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('rejects reusing an idempotency key with a different payload', async () => {
@@ -196,6 +202,7 @@ suite('wagering (integration)', () => {
     const conflict = await submit(body(wallet, 'BET', '20.00'), key);
     expect(conflict.status).toBe(409);
     expect(((await conflict.json()) as { code: string }).code).toBe('IDEMPOTENCY_CONFLICT');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('refunds a BET exactly once', async () => {
@@ -220,6 +227,7 @@ suite('wagering (integration)', () => {
     expect(((await secondRefund.json()) as { failureCode: string }).failureCode).toBe(
       'ALREADY_REVERSED',
     );
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('rejects a ROLLBACK that would produce a negative balance', async () => {
@@ -237,6 +245,7 @@ suite('wagering (integration)', () => {
     const result = (await rollback.json()) as { failureCode: string; status: string };
     expect(result.status).toBe('REJECTED');
     expect(result.failureCode).toBe('REVERSAL_WOULD_GO_NEGATIVE');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('keeps a reversal pending when the reference has not arrived', async () => {
@@ -249,6 +258,7 @@ suite('wagering (integration)', () => {
     expect(result.status).toBe('PENDING_REFERENCE');
     expect(result.balance.amount).toBe('100.00');
     expect(await outboxEvents(wallet.id)).toEqual(['WagerTransactionPendingReference']);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('settles the mandatory scenario: two concurrent 80.00 bets on a 100.00 balance', async () => {
@@ -262,6 +272,25 @@ suite('wagering (integration)', () => {
     expect(statuses).toEqual([201, 422]);
     expect(await balance(wallet.id)).toBe('20.00');
     expect(await ledgerCounts(wallet.id)).toEqual({ DEBIT: 1, CREDIT: 1 });
+    await assertWalletMatchesLedger(dataSource, wallet.id);
+  });
+
+  it('processes distinct wallets in parallel without cross-contamination', async () => {
+    const wallets = await Promise.all(Array.from({ length: 4 }, () => createWallet('100.00')));
+
+    const responses = await Promise.all(
+      wallets.flatMap((wallet) =>
+        Array.from({ length: 5 }, () => submit(body(wallet, 'BET', '10.00'))),
+      ),
+    );
+
+    expect(responses.every((response) => response.status === 201)).toBe(true);
+
+    for (const wallet of wallets) {
+      expect(await balance(wallet.id)).toBe('50.00');
+      expect(await ledgerCounts(wallet.id)).toEqual({ DEBIT: 5, CREDIT: 1 });
+      await assertWalletMatchesLedger(dataSource, wallet.id);
+    }
   });
 
   it('applies a duplicated bet only once under parallel delivery', async () => {
@@ -275,6 +304,7 @@ suite('wagering (integration)', () => {
     expect(statuses.every((status) => status === 200 || status === 201)).toBe(true);
     expect(await ledgerCounts(wallet.id)).toEqual({ DEBIT: 1, CREDIT: 1 });
     expect(await balance(wallet.id)).toBe('75.00');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('exposes transactions by id and by provider external id', async () => {
@@ -295,5 +325,6 @@ suite('wagering (integration)', () => {
     );
 
     expect((await fetch(`${baseUrl}/wagering/transactions/${uuidv7()}`)).status).toBe(404);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 });

@@ -3,6 +3,7 @@ import {
   GetQueueAttributesCommand,
   ReceiveMessageCommand,
   SendMessageCommand,
+  type Message,
   type SQSClient,
 } from '@aws-sdk/client-sqs';
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -17,6 +18,7 @@ import {
   SqsWagerConsumer,
   WAGER_CONSUMER_NAME,
 } from '../../src/wagering/sqs-wager-consumer.service';
+import { assertWalletMatchesLedger } from './support/ledger-consistency';
 
 const runIntegration = process.env.RUN_INTEGRATION === '1';
 const suite = runIntegration ? describe : describe.skip;
@@ -181,7 +183,8 @@ suite('wager queue consumer (integration)', () => {
       'WagerTransactionProcessed',
       'WalletBalanceChanged',
     ]);
-  });
+    await assertWalletMatchesLedger(dataSource, wallet.id);
+  }, 20_000);
 
   it('deduplicates by messageId without applying the effect twice', async () => {
     const wallet = await createWallet('100.00');
@@ -194,6 +197,41 @@ suite('wager queue consumer (integration)', () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     expect(await debitCount(wallet.id)).toBe(1);
     expect(await balance(wallet.id)).toBe('75.00');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
+  }, 20_000);
+
+  it('does not reapply effects when the worker dies after commit and before ack', async () => {
+    const wallet = await createWallet('100.00');
+    const messageId = uuidv7();
+    const message: Message = {
+      MessageId: messageId,
+      ReceiptHandle: 'receipt-crash-before-ack',
+      Body: JSON.stringify(envelope(messageId, wallet)),
+    };
+
+    const internals = consumer as unknown as {
+      handleMessage(message: Message): Promise<void>;
+      deleteMessage(receiptHandle: string): Promise<void>;
+    };
+    internals.deleteMessage = async () => {
+      throw new Error('simulated crash before ack');
+    };
+
+    await expect(internals.handleMessage(message)).rejects.toThrow(
+      'simulated crash before ack',
+    );
+
+    expect(await inboxProcessed(messageId)).toBe(true);
+    expect(await debitCount(wallet.id)).toBe(1);
+    expect(await balance(wallet.id)).toBe('75.00');
+
+    // A reentrega da mesma mensagem encontra o inbox e não aplica o efeito de novo.
+    // O `deleteMessage` continua no-op para não usar um receipt handle inválido no SQS.
+    internals.deleteMessage = async () => undefined;
+    await internals.handleMessage(message);
+    expect(await debitCount(wallet.id)).toBe(1);
+    expect(await balance(wallet.id)).toBe('75.00');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('moves a malformed message to the DLQ', async () => {
@@ -201,7 +239,7 @@ suite('wager queue consumer (integration)', () => {
     await send('not-a-valid-envelope', uuidv7());
     await waitFor(async () => (await dlqDepth()) > before);
     expect(await dlqDepth()).toBeGreaterThan(before);
-  });
+  }, 20_000);
 
   it('stops gracefully', async () => {
     await consumer.stop();

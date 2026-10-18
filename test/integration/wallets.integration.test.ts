@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { v7 as uuidv7 } from 'uuid';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module';
+import { assertWalletMatchesLedger } from './support/ledger-consistency';
 
 const runIntegration = process.env.RUN_INTEGRATION === '1';
 const suite = runIntegration ? describe : describe.skip;
@@ -70,6 +71,7 @@ suite('wallets (integration)', () => {
       [wallet.id],
     );
     expect(persisted).toEqual([{ kind: 'OPENING', status: 'PROCESSED' }]);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('creates a wallet with a zero balance and no ledger entry', async () => {
@@ -83,26 +85,38 @@ suite('wallets (integration)', () => {
     const ledger = await fetch(`${baseUrl}/wallets/${wallet.id}/ledger`);
     const page = (await ledger.json()) as { entries: unknown[] };
     expect(page.entries).toHaveLength(0);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('rejects a duplicate playerId + currency with 409', async () => {
     const playerId = uuidv7();
     const body = { playerId, initialBalance: { amount: '10.00', currency: 'BRL' } };
-    expect((await createWallet(body)).status).toBe(201);
+    const first = await createWallet(body);
+    expect(first.status).toBe(201);
+    const wallet = (await first.json()) as { id: string };
     expect((await createWallet(body)).status).toBe(409);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('allows the same player in a different currency', async () => {
     const playerId = uuidv7();
-    expect(
-      (await createWallet({ playerId, initialBalance: { amount: '10.00', currency: 'BRL' } })).status,
-    ).toBe(201);
-    expect(
-      (await createWallet({ playerId, initialBalance: { amount: '10.00', currency: 'USD' } })).status,
-    ).toBe(201);
+    const brl = await createWallet({
+      playerId,
+      initialBalance: { amount: '10.00', currency: 'BRL' },
+    });
+    expect(brl.status).toBe(201);
+    const brlWallet = (await brl.json()) as { id: string };
+    const usd = await createWallet({
+      playerId,
+      initialBalance: { amount: '10.00', currency: 'USD' },
+    });
+    expect(usd.status).toBe(201);
+    const usdWallet = (await usd.json()) as { id: string };
     expect(
       (await createWallet({ playerId, initialBalance: { amount: '10.00', currency: 'BRL' } })).status,
     ).toBe(409);
+    await assertWalletMatchesLedger(dataSource, brlWallet.id);
+    await assertWalletMatchesLedger(dataSource, usdWallet.id);
   });
 
   it('returns 404 for an unknown wallet', async () => {
@@ -142,6 +156,11 @@ suite('wallets (integration)', () => {
        VALUES ($1, $2, $3, 'CREDIT', '5.00', 'BRL', '500.00', '505.00', now() + interval '1 second')`,
       [uuidv7(), wallet.id, extraTransactionId],
     );
+    // Mantém o saldo materializado coerente com o lançamento inserido à mão.
+    await dataSource.query('UPDATE wallets SET balance_amount = $1 WHERE id = $2', [
+      '505.00',
+      wallet.id,
+    ]);
 
     const first = (await (
       await fetch(`${baseUrl}/wallets/${wallet.id}/ledger?limit=1`)
@@ -159,6 +178,7 @@ suite('wallets (integration)', () => {
       await fetch(`${baseUrl}/wallets/${wallet.id}/ledger?limit=1&cursor=${first.nextCursor}`)
     ).json()) as { entries: Array<{ id: string }> };
     expect(replay.entries[0]!.id).toBe(second.entries[0]!.id);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   describe('schema guarantees', () => {
@@ -188,6 +208,7 @@ suite('wallets (integration)', () => {
       await expect(
         dataSource.query('DELETE FROM wallet_ledger_entries WHERE wallet_id = $1', [wallet.id]),
       ).rejects.toThrow(/append-only/);
+      await assertWalletMatchesLedger(dataSource, wallet.id);
     });
   });
 });

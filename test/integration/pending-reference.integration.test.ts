@@ -6,6 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module';
 import { PendingReferenceWorker } from '../../src/wagering/pending-reference-worker.service';
+import { assertWalletMatchesLedger } from './support/ledger-consistency';
 
 const runIntegration = process.env.RUN_INTEGRATION === '1';
 const suite = runIntegration ? describe : describe.skip;
@@ -118,6 +119,7 @@ suite('pending reference and reconciliation (integration)', () => {
     expect((await statusOf(refund.body.transactionId)).status).toBe('PROCESSED');
     expect(await balance(wallet.id)).toBe('100.00');
     expect(await outboxEvents(wallet.id)).toContain('WagerTransactionProcessed');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('does not retry before the next attempt is due', async () => {
@@ -133,6 +135,7 @@ suite('pending reference and reconciliation (integration)', () => {
     const settled = await worker.runOnce(now);
     expect(settled).toBe(0);
     expect(await attemptsOf(refund.body.transactionId)).toBe(1);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('rejects with REFERENCE_NOT_FOUND after exhausting attempts', async () => {
@@ -149,6 +152,7 @@ suite('pending reference and reconciliation (integration)', () => {
     expect(state.status).toBe('REJECTED');
     expect(state.failureCode).toBe('REFERENCE_NOT_FOUND');
     expect(await outboxEvents(wallet.id)).toContain('WagerTransactionRejected');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('reports a consistent wallet', async () => {
@@ -173,6 +177,7 @@ suite('pending reference and reconciliation (integration)', () => {
       consistent: true,
       checkedEntries: 1,
     });
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('flags a divergence without correcting it', async () => {
@@ -191,6 +196,7 @@ suite('pending reference and reconciliation (integration)', () => {
     expect(body.calculatedBalance.amount).toBe('100.00');
     expect(body.difference.amount).toBe('899.99');
 
+    // Este teste corrompe o saldo de propósito; a invariante wallet == ledger não se aplica.
     expect(await balance(wallet.id)).toBe('999.99');
   });
 });

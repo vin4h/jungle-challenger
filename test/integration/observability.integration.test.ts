@@ -3,13 +3,16 @@ import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { v7 as uuidv7 } from 'uuid';
+import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module';
+import { assertWalletMatchesLedger } from './support/ledger-consistency';
 
 const runIntegration = process.env.RUN_INTEGRATION === '1';
 const suite = runIntegration ? describe : describe.skip;
 
 suite('observability (integration)', () => {
   let app: INestApplication;
+  let dataSource: DataSource;
   let baseUrl: string;
 
   beforeAll(async () => {
@@ -19,6 +22,7 @@ suite('observability (integration)', () => {
     );
     await app.listen(0, '127.0.0.1');
     baseUrl = await app.getUrl();
+    dataSource = app.get(DataSource);
   });
 
   afterAll(async () => {
@@ -80,5 +84,6 @@ suite('observability (integration)', () => {
     expect(metrics).toContain('wager_idempotent_replays_total 1');
     expect(metrics).toContain('# TYPE outbox_lag_seconds gauge');
     expect(metrics).toContain('# TYPE wallet_lock_wait_seconds histogram');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 });

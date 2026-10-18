@@ -18,6 +18,7 @@ import { SQS_CLIENT, SQS_QUEUES, type SqsQueueUrls } from '../../src/infrastruct
 import { EVENT_PUBLISHER } from '../../src/messaging/messaging.tokens';
 import { OutboxPublisher } from '../../src/messaging/outbox-publisher.service';
 import { MetricsService } from '../../src/observability/metrics.service';
+import { assertWalletMatchesLedger } from './support/ledger-consistency';
 
 const runIntegration = process.env.RUN_INTEGRATION === '1';
 const suite = runIntegration ? describe : describe.skip;
@@ -181,6 +182,7 @@ suite('outbox publisher (integration)', () => {
       'WalletBalanceChanged',
     ]);
     expect(received.find((event) => event.body.includes(wallet.id))?.groupId).toBe(wallet.id);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('does not lose events when two publishers run concurrently', async () => {
@@ -202,6 +204,7 @@ suite('outbox publisher (integration)', () => {
     const events = eventsOf(await receiveEvents(), wallet.id);
     expect(events).toHaveLength(6);
     expect(new Set(events.map((event) => event.eventId)).size).toBe(6);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
   it('republishes after the lease expires when a publisher dies mid-flight', async () => {
@@ -223,5 +226,6 @@ suite('outbox publisher (integration)', () => {
     await publisher.publishOnce(new Date(Date.now() + 31_000));
     await waitFor(async () => ((await pendingFor(wallet.id)) === 0 ? true : null));
     expect(eventsOf(await receiveEvents(), wallet.id)).toHaveLength(2);
+    await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 });
