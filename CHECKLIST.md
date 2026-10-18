@@ -329,27 +329,50 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 ## Apêndice A — Restrições invioláveis (§5) e falhas eliminatórias (§14)
 
 > Não é item de trabalho — é checklist de revisão antes de entregar. Qualquer ❌ é fatal.
+>
+> Revisado em 2026-10-18: todos os itens abaixo foram conferidos no código e nos testes.
 
 ### Proibições (§5)
-- [ ] ❌ **Não** usar `number`/`float`/`double` para dinheiro.
-- [ ] ❌ **Não** usar cache em memória como garantia de idempotência.
-- [ ] ❌ **Não** confiar apenas em **SQS FIFO** para consistência.
-- [ ] ❌ **Não** publicar eventos **antes** do commit.
-- [ ] ❌ **Não** sobrescrever/excluir lançamentos do ledger.
-- [ ] ❌ **Não** usar **lock global** compartilhado por todas as wallets.
-- [ ] ❌ **Não** implementar saldo como `read → calculate → update` sem controle de concorrência.
-- [ ] ✅ Solução correta com **múltiplas instâncias**.
-- [ ] ✅ Unicidade, imutabilidade e não-negatividade **no schema do banco** (constraints/índices), não só em código.
+- [x] ❌ **Não** usar `number`/`float`/`double` para dinheiro.
+  - ✅ `Money` sobre `decimal.js`; entrada/saída string; `NUMERIC(18,2)` + `CHAR(3)` no schema.
+- [x] ❌ **Não** usar cache em memória como garantia de idempotência.
+  - ✅ `UNIQUE (idempotency_key)` no banco; o replay relê a transação vencedora no PostgreSQL.
+- [x] ❌ **Não** confiar apenas em **SQS FIFO** para consistência.
+  - ✅ `ContentBasedDeduplication=false`; a dedup real é o inbox `(consumer_name, message_id)`.
+- [x] ❌ **Não** publicar eventos **antes** do commit.
+  - ✅ outbox na mesma transação SQL; o publisher lê depois do commit.
+- [x] ❌ **Não** sobrescrever/excluir lançamentos do ledger.
+  - ✅ classe sem setters/transições + trigger `BEFORE UPDATE OR DELETE`; testado.
+- [x] ❌ **Não** usar **lock global** compartilhado por todas as wallets.
+  - ✅ `SELECT ... FOR UPDATE` por `walletId`; wallets diferentes progridem em paralelo.
+- [x] ❌ **Não** implementar saldo como `read → calculate → update` sem controle de concorrência.
+  - ✅ a leitura com lock, o cálculo e o update ocorrem na mesma transação.
+- [x] ✅ Solução correta com **múltiplas instâncias**.
+  - ✅ `multi-instance.integration.test.ts`: 3 processos reais sobre o mesmo banco/filas.
+- [x] ✅ Unicidade, imutabilidade e não-negatividade **no schema do banco** (constraints/índices), não só em código.
+  - ✅ `UNIQUE (player_id, currency)`, `UNIQUE (idempotency_key)`, `CHECK` de saldo e de ledger
+    balanceado, `UNIQUE (transaction_id, wallet_id)` e trigger append-only; testado.
 
 ### Falhas eliminatórias (§14)
-- [ ] ❌ `number` para dinheiro.
-- [ ] ❌ Saldo negativo causado por race.
-- [ ] ❌ Débito ou crédito duplicado.
-- [ ] ❌ Idempotência apenas em memória.
-- [ ] ❌ Solução correta somente com uma instância.
-- [ ] ❌ Publicação de evento antes do commit.
-- [ ] ❌ Ausência de ledger auditável.
-- [ ] ❌ Testes que substituem completamente PostgreSQL e SQS por mocks.
+- [x] ❌ `number` para dinheiro.
+  - ✅ nunca usado no caminho financeiro; coberto pelos testes de `Money` e pelas constraints.
+- [x] ❌ Saldo negativo causado por race.
+  - ✅ lock por wallet + `CHECK (balance_amount >= 0)`; cenário 100/2×80 testado.
+- [x] ❌ Débito ou crédito duplicado.
+  - ✅ idempotência persistente + `UNIQUE (transaction_id, wallet_id)` + inbox; testado com
+    10 envios paralelos e reentrega de mensagem.
+- [x] ❌ Idempotência apenas em memória.
+  - ✅ persistida no banco; sobrevive a restart e é compartilhada entre instâncias.
+- [x] ❌ Solução correta somente com uma instância.
+  - ✅ validada com 3 processos concorrentes.
+- [x] ❌ Publicação de evento antes do commit.
+  - ✅ eventos só existem na outbox depois do commit da transação financeira.
+- [x] ❌ Ausência de ledger auditável.
+  - ✅ ledger append-only com `balance_before`/`balance_after` e reconciliação
+    `wallet.balance == SUM(ledger)`.
+- [x] ❌ Testes que substituem completamente PostgreSQL e SQS por mocks.
+  - ✅ 46 testes de integração com PostgreSQL e LocalStack reais; os unitários cobrem só o
+    domínio puro.
 
 ---
 
