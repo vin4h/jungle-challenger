@@ -1,6 +1,7 @@
 export enum FailureCode {
   InsufficientFunds = 'INSUFFICIENT_FUNDS',
   CurrencyMismatch = 'CURRENCY_MISMATCH',
+  WalletPlayerMismatch = 'WALLET_PLAYER_MISMATCH',
   WalletNotFound = 'WALLET_NOT_FOUND',
   ReferenceRequired = 'REFERENCE_REQUIRED',
   ReferenceNotFound = 'REFERENCE_NOT_FOUND',

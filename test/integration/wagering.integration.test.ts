@@ -205,6 +205,42 @@ suite('wagering (integration)', () => {
     await assertWalletMatchesLedger(dataSource, wallet.id);
   });
 
+  it('rejects the same provider transaction resubmitted under a different idempotency key', async () => {
+    const wallet = await createWallet('100.00');
+    const externalTransactionId = uuidv7();
+
+    const first = await submit(
+      body(wallet, 'BET', '25.00', { externalTransactionId }),
+      `provider-a:${uuidv7()}`,
+    );
+    expect(first.status).toBe(201);
+
+    // Mesma chave natural (provider + external id), Idempotency-Key diferente:
+    // a chave natural é a identidade da operação, então o conflito vence o replay.
+    const conflicting = await submit(
+      body(wallet, 'BET', '25.00', { externalTransactionId }),
+      `provider-a:${uuidv7()}`,
+    );
+    expect(conflicting.status).toBe(409);
+    expect(((await conflicting.json()) as { code: string }).code).toBe(
+      'DUPLICATE_WAGER_TRANSACTION',
+    );
+    expect(await ledgerCounts(wallet.id)).toEqual({ DEBIT: 1, CREDIT: 1 });
+    await assertWalletMatchesLedger(dataSource, wallet.id);
+  });
+
+  it('rejects a transaction whose playerId does not own the wallet', async () => {
+    const wallet = await createWallet('100.00');
+
+    const response = await submit(body(wallet, 'BET', '25.00', { playerId: uuidv7() }));
+    expect(response.status).toBe(422);
+    const payload = (await response.json()) as { status: string; failureCode?: string };
+    expect(payload.status).toBe('REJECTED');
+    expect(payload.failureCode).toBe('WALLET_PLAYER_MISMATCH');
+    expect(await balance(wallet.id)).toBe('100.00');
+    await assertWalletMatchesLedger(dataSource, wallet.id);
+  });
+
   it('refunds a BET exactly once', async () => {
     const wallet = await createWallet('100.00');
     const externalId = uuidv7();
@@ -298,7 +334,7 @@ suite('wagering (integration)', () => {
     const key = `provider-a:${uuidv7()}`;
     const payload = body(wallet, 'BET', '25.00');
 
-    const responses = await Promise.all(Array.from({ length: 10 }, () => submit(payload, key)));
+    const responses = await Promise.all(Array.from({ length: 50 }, () => submit(payload, key)));
     const statuses = responses.map((response) => response.status);
     expect(statuses.filter((status) => status === 201)).toHaveLength(1);
     expect(statuses.every((status) => status === 200 || status === 201)).toBe(true);

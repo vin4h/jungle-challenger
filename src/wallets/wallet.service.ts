@@ -9,6 +9,7 @@ import type { LedgerEntriesPage, ListLedgerEntriesOptions } from '../domain/wall
 import { Wallet } from '../domain/wallet/wallet';
 import { WagerTransaction } from '../domain/wager-transaction/wager-transaction';
 import { UNIT_OF_WORK } from '../infrastructure/persistence/persistence.tokens';
+import { MetricsService } from '../observability/metrics.service';
 
 export interface CreateWalletInput {
   readonly playerId: string;
@@ -28,7 +29,10 @@ export interface ReconciliationResult {
 export class WalletService {
   private readonly logger = new Logger(WalletService.name);
 
-  constructor(@Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork) {}
+  constructor(
+    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
+    private readonly metrics: MetricsService,
+  ) {}
 
   async createWallet(input: CreateWalletInput): Promise<Wallet> {
     const initialBalance = Money.from(input.initialBalance);
@@ -120,6 +124,7 @@ export class WalletService {
       const consistent = difference.isZero();
 
       if (!consistent) {
+        this.metrics.reconciliationDivergence();
         this.logger.warn(
           `Wallet ${walletId} is inconsistent: stored=${wallet.balance.toString()} ledger=${calculatedBalance.toString()}`,
         );

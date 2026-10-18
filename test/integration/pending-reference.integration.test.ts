@@ -196,6 +196,9 @@ suite('pending reference and reconciliation (integration)', () => {
     expect(body.calculatedBalance.amount).toBe('100.00');
     expect(body.difference.amount).toBe('899.99');
 
+    const metrics = await (await fetch(`${baseUrl}/metrics`)).text();
+    expect(metrics).toContain('wallet_reconciliation_divergences_total 1');
+
     // Este teste corrompe o saldo de propósito; a invariante wallet == ledger não se aplica.
     expect(await balance(wallet.id)).toBe('999.99');
   });

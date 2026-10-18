@@ -269,6 +269,11 @@ export class ProcessWagerTransactionUseCase {
       return;
     }
 
+    if (transaction.playerId !== wallet.playerId) {
+      reject(FailureCode.WalletPlayerMismatch);
+      return;
+    }
+
     if (transaction.kind === WagerTransactionKind.Loss) {
       transaction.markProcessed(undefined, occurredAt);
       transaction.setResultBalance(wallet.balance);

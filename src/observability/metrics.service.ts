@@ -18,6 +18,10 @@ export class MetricsService {
     registry.registerHistogram('wager_processing_seconds', 'Wager processing latency');
     registry.registerHistogram('wallet_lock_wait_seconds', 'Wallet lock acquisition wait');
     registry.registerGauge('outbox_lag_seconds', 'Age of the oldest pending outbox message');
+    registry.registerCounter(
+      'wallet_reconciliation_divergences_total',
+      'Wallet reconciliations that found a divergence',
+    );
   }
 
   wagerProcessed(status: string, kind: string, seconds: number): void {
@@ -51,6 +55,10 @@ export class MetricsService {
 
   walletLockWait(seconds: number): void {
     this.registry.observe('wallet_lock_wait_seconds', seconds);
+  }
+
+  reconciliationDivergence(): void {
+    this.registry.inc('wallet_reconciliation_divergences_total');
   }
 
   render(): string {
