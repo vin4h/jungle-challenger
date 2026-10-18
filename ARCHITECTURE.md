@@ -155,8 +155,8 @@ negativo nem duas wallets iguais.
 **Cenário obrigatório (README seção 8):** saldo `100.00`, duas apostas de `80.00`
 simultâneas. Com o lock por wallet, a segunda transação espera o commit da primeira, lê o
 saldo `20.00` e é rejeitada por saldo insuficiente → exatamente uma `PROCESSED`, uma
-`REJECTED`, saldo `20.00` e um único `DEBIT` no ledger. (As regras de aposta por SQS
-chegam em um slice seguinte; a primitiva de concorrência já está implementada.)
+`REJECTED`, saldo `20.00` e um único `DEBIT` no ledger. O mesmo cenário é exercitado
+pela API HTTP e pelo consumidor SQS, que reutiliza o mesmo caso de uso.
 
 ## 6.1 Schema e atomicidade da wallet **[DECIDIDO]**
 
@@ -174,6 +174,49 @@ chegam em um slice seguinte; a primitiva de concorrência já está implementada
   `code` estável do erro de domínio — `INVALID_MONEY`/`CURRENCY_MISMATCH`/
   `INVALID_WALLET_STATE` → `400`; `WALLET_ALREADY_EXISTS` → `409`; `WALLET_NOT_FOUND` →
   `404`; `INSUFFICIENT_FUNDS` → `422` (ainda não exercitado pelos endpoints de wallet).
+
+## 6.2 Transições de `WagerTransaction` **[DECIDIDO]**
+
+A máquina de estados é explícita no agregado. Todos os métodos de transição passam por
+`assertNotTerminal`; tentar transicionar um estado terminal (`PROCESSED`, `REJECTED` ou
+`FAILED`) lança `InvalidTransactionStateError`. A factory `rehydrate` reconstrói estado já
+persistido e **não** revalida transições.
+
+| Estado atual | Gatilho | Destino | Condição/efeito |
+|---|---|---|---|
+| — | `WagerTransaction.create` | `PENDING` | Nova operação externa (`BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`); dinheiro positivo; `REFUND`/`ROLLBACK` exigem referência. |
+| — | `WagerTransaction.open` | `PROCESSED` | `OPENING` interno; já nasce terminal, com `processedAt`. |
+| `PENDING` | `applyMovement` + `markProcessed` | `PROCESSED` | Débito/crédito aplicado, ledger criado, `referenceTransactionId` e `resultBalance` definidos. |
+| `PENDING` | `markProcessed` (sem movimento) | `PROCESSED` | Apenas `LOSS`: registra o resultado sem alterar saldo nem ledger. |
+| `PENDING` | `markPendingReference` | `PENDING_REFERENCE` | `REFUND`/`ROLLBACK` cuja referência ainda não existe; emite `WagerTransactionPendingReference`. |
+| `PENDING` | `reject(code)` | `REJECTED` | Violação de regra de negócio; sem movimento/ledger; emite `WagerTransactionRejected`. |
+| `PENDING` | `fail(code)` | `FAILED` | Reservado para erro permanente de infraestrutura; o caso de uso atual ainda não o aciona. |
+| `PENDING_REFERENCE` | `scheduleReferenceRetry(next)` | `PENDING_REFERENCE` | Incrementa `referenceAttempts` e agenda `referenceNextAttemptAt`; não é uma mudança de status. |
+| `PENDING_REFERENCE` | `applyMovement` + `markProcessed` | `PROCESSED` | Referência encontrada e válida; aplica o movimento (invertido no `ROLLBACK`). |
+| `PENDING_REFERENCE` | `reject(code)` | `REJECTED` | Referência inválida ou limite de tentativas esgotado (`REFERENCE_NOT_FOUND`). |
+| `PROCESSED` / `REJECTED` / `FAILED` | qualquer transição | — | Terminal; a tentativa lança `InvalidTransactionStateError`. |
+
+```text
+create ─────────────────────────────▶ PENDING
+                                        │
+     ┌──────────────────────────────────┼───────────────────────────────┐
+     │ movimento (BET/WIN/REFUND/       │ referência ausente            │ reject(code) / fail(code)
+     │ ROLLBACK) ou LOSS                │ (REFUND/ROLLBACK)             │
+     ▼                                  ▼                               ▼
+ PROCESSED                        PENDING_REFERENCE                 REJECTED / FAILED
+                                    │           │                    (terminais)
+              referência válida ────┘           └──── inválida/limite ──▶ REJECTED
+                     │
+                     ▼
+                 PROCESSED
+
+open (OPENING, interno) ────────────▶ PROCESSED
+PROCESSED / REJECTED / FAILED = terminais
+```
+
+**Observação:** `FAILED` e `fail()` existem e são cobertos pelos testes de domínio, mas
+não há, hoje, um caminho de produção que os acione. Eles ficam como ponto de extensão para
+erros permanentes de infraestrutura, que devem ser distintos de rejeição de negócio.
 
 ---
 
@@ -205,6 +248,37 @@ gera ledger), de modo que repetir a operação devolve o resultado original.
 `REFUND`/`ROLLBACK` referenciam por `(providerId, referenceExternalTransactionId)` e a
 referência é validada quanto a provider, player, wallet, moeda e rodada; uma reversão por
 tipo é garantida por consulta a `reference_transaction_id`.
+
+## 7.1 Taxonomia de `failureCode` **[DECIDIDO]**
+
+Todo desfecho `REJECTED` carrega um `failureCode` estável e legível por máquina. A tabela
+abaixo separa os códigos **emitidos hoje** dos **reservados** (definidos no enum, mas sem
+caminho de produção). A resposta HTTP de uma transação `REJECTED` é `422`; a ação do
+provedor é o que ele deve fazer ao receber aquele código.
+
+| Código | Emitido hoje | Quando ocorre | Ação esperada do provedor |
+|---|---|---|---|
+| `INSUFFICIENT_FUNDS` | Sim | `BET` cujo débito deixaria o saldo negativo. | Não reenviar o mesmo payload; ajustar a operação ou aguardar saldo. |
+| `CURRENCY_MISMATCH` | Sim | Moeda da operação diferente da moeda da wallet. | Corrigir o payload. |
+| `REFERENCE_NOT_FOUND` | Sim | `REFUND`/`ROLLBACK` sem referência após o limite de tentativas; `WIN` com referência opcional inexistente. | Verificar o `referenceExternalTransactionId` e reenviar depois que a referência existir. |
+| `REFERENCE_MISMATCH` | Sim | Referência existe, mas pertence a outro provider, player, wallet, rodada ou moeda. | Corrigir a referência. |
+| `REFERENCE_NOT_REVERSIBLE` | Sim | Referência não está `PROCESSED` ou o tipo não é reversível pelo `kind` pedido. | Investigar o estado da referência antes de reenviar. |
+| `ALREADY_REVERSED` | Sim | Já existe uma reversão `PROCESSED` do mesmo tipo para a referência. | Não reenviar; usar replay se a intenção era repetir a mesma operação. |
+| `AMOUNT_MISMATCH` | Sim | Valor de `REFUND`/`ROLLBACK` diferente do valor da referência (reversão parcial fora de escopo). | Corrigir o valor. |
+| `REVERSAL_WOULD_GO_NEGATIVE` | Sim | Movimento inverso deixaria o saldo negativo (situação distinta de aposta sem saldo). | Análise operacional; não reenviar automaticamente. |
+| `WALLET_NOT_FOUND` | Não | Definido no enum, mas a wallet inexistente vira `WalletNotFoundError` → HTTP `404`, sem persistir `REJECTED` (a FK `wallet_id NOT NULL` impede). | Criar/provisionar a wallet e reenviar. |
+| `REFERENCE_REQUIRED` | Não | Definido no enum, mas `WagerTransaction.create` barra antes com `INVALID_WAGER_TRANSACTION` → HTTP `400`. | Corrigir o payload incluindo a referência. |
+| `INVALID_STATE` | Não | Reservado para transições inválidas no caminho de `FAILED`; hoje a transição inválida lança `InvalidTransactionStateError`. | Erro de programação; não é caminho de negócio. |
+| `INTERNAL_ERROR` | Não | Reservado para falha permanente de infraestrutura no caminho de `FAILED`, ainda não ligado. | Falha operacional; não reenviar sem diagnóstico. |
+
+Dois cuidados de leitura:
+
+- **`CURRENCY_MISMATCH` pode aparecer em dois contextos:** como `failureCode` de uma
+  transação `REJECTED` (moeda da operação ≠ moeda da wallet → `422`) ou como
+  `CurrencyMismatchError` de uma operação aritmética entre `Money` de moedas diferentes
+  (`400`). O primeiro é regra de negócio; o segundo é erro de contrato.
+- **`failureCode` não substitui o `status`:** `status = REJECTED` indica o desfecho;
+  `failureCode` explica o motivo. Nenhum dos dois altera saldo nem gera ledger.
 
 ---
 
@@ -311,4 +385,3 @@ em vez de falhar, “conflito de lock” é medido como **tempo de espera** na a
 - **[DECIDIDO]** O ambiente de desenvolvimento sobe Keycloak sem TLS e com client público.
 - **[DECIDIDO]** Wallet inexistente em `POST /wagering/transactions` responde `404` e **não**
   é registrada como `REJECTED`: a FK `wallet_id NOT NULL` impede persistir a transação.
-- **[PENDENTE]** Demais limitações serão registradas conforme a implementação avançar.

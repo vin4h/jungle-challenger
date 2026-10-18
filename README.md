@@ -744,3 +744,68 @@ wallet.balance == saldo reconstruído pelo ledger
 ### Diferenciais opcionais
 
 Teste de carga também conta como diferencial. Se fizer, exponha como `bun run test:load` e registre ambiente, metodologia, throughput, p50/p95/p99, taxa de erro, conflitos de concorrência e outbox lag. Não há meta de RPS — a qualidade do experimento e a honestidade da análise pesam mais que o número bruto.
+
+---
+
+## 15. Como rodar este projeto
+
+Esta seção descreve o caminho feliz local. O detalhamento (variáveis, Keycloak, filas,
+exemplos de curl e workers) está em [`docs/SETUP.md`](docs/SETUP.md).
+
+### Pré-requisitos
+
+- **Bun 1.x** (`bun --version`)
+- **Docker** + **Docker Compose v2**
+
+### Subir o ambiente
+
+```bash
+bun install
+cp .env.example .env
+bun run compose:up       # PostgreSQL + LocalStack + Keycloak
+bun run migration:run    # aplica as migrations
+bun run dev              # aplicação em watch mode
+```
+
+As portas padrão são `3000` (API), `5432` (PostgreSQL), `4566` (LocalStack) e `8080`
+(Keycloak). Elas podem ser trocadas no `.env` (`PORT`, `POSTGRES_PORT`, `LOCALSTACK_PORT`,
+`KEYCLOAK_PORT`).
+
+### Comandos úteis
+
+```bash
+bun run typecheck                         # TypeScript estrito
+bun run test:unit                         # testes unitários (não exigem containers)
+RUN_INTEGRATION=1 bun run test:integration # PostgreSQL + LocalStack reais
+bun run migration:show                    # status das migrations
+bun run migration:revert                  # desfaz a última migration
+bun run compose:down                      # derruba containers e limpa volumes
+```
+
+### Health, métricas e autenticação
+
+```bash
+curl -s http://localhost:3000/health/live
+curl -s http://localhost:3000/health/ready
+curl -s http://localhost:3000/metrics
+```
+
+Com `AUTH_ENABLED=true`, os endpoints de negócio exigem um Bearer token do Keycloak;
+`health` e `metrics` são sempre públicos. Para desenvolvimento local, `AUTH_ENABLED=false`
+torna o guard um no-op deliberado. O processo de obtenção do token está em
+[`docs/SETUP.md`](docs/SETUP.md) §7.
+
+### Workers e filas
+
+Os workers ficam **desligados por padrão** e são habilitados por ambiente:
+
+```bash
+SQS_CONSUMER_ENABLED=true
+OUTBOX_PUBLISHER_ENABLED=true
+PENDING_REFERENCE_WORKER_ENABLED=true
+```
+
+As filas FIFO (`wager-transactions.fifo`, `wager-transactions-dlq.fifo`,
+`wager-events.fifo` e `wager-events-dlq.fifo`) são criadas automaticamente pelo LocalStack
+no `docker compose up`. A outbox e o inbox vivem no PostgreSQL; o broker é transporte, não
+a garantia de consistência.
