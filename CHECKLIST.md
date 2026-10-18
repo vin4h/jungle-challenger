@@ -9,6 +9,9 @@ Legenda de prioridade:
 - **P1** — avaliado diretamente na tabela de pontuação (§14).
 - **P2** — diferencial / opcional.
 
+> Última revisão: 2026-10-18. Itens marcados com ✅ foram conferidos no código ou nos
+> testes; os itens ainda abertos continuam pendentes.
+
 ---
 
 ## 0. Setup e infraestrutura — §4, §5
@@ -35,7 +38,10 @@ Legenda de prioridade:
 - [x] **(P1, IMPL)** **Se NÃO implementar:** deixar ponto de extensão explícito (`AuthGuard` no-op ou `ProviderIdentityPort`). — §2
   - ✅ ambos: Keycloak integrado **e** `AUTH_ENABLED=false` torna o guard no-op deliberado
 - [x] **(P0, IMPL)** Health endpoints **abertos** (sem auth). — §2, §9
-- [ ] **(P0, IMPL)** Identidade do provedor vinda da fila **continua sujeita às validações de domínio** (fila é canal confiável, mas dados não são). — §2
+- [x] **(P0, IMPL)** Identidade do provedor vinda da fila **continua sujeita às validações de domínio** (fila é canal confiável, mas dados não são). — §2
+  - ✅ consumidor reutiliza `ProcessWagerTransactionUseCase.executeWithin`; `Money`, `kind`,
+    moeda e referência passam pelas mesmas validações do HTTP.
+  - Observação: não há checagem de que `playerId` pertence à `wallet` informada.
 - [x] CA: priorizar correção financeira/concorrência/idempotência sobre auth (timebox). — §2
 
 ---
@@ -87,7 +93,8 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
   - ✅ `WagerTransaction.create` rejeita `OPENING`; só `WagerTransaction.open` o produz.
 - [x] **(P0, IMPL)** Mesma idempotency key + payload diferente = **conflito**, não replay. — §6.3
   - ✅ `UNIQUE (idempotency_key)` + `payloadHash` canônico; div. → `409 IDEMPOTENCY_CONFLICT`.
-- [ ] **(P1, DOC)** Documentar as **transições válidas**. — §6.3
+- [x] **(P1, DOC)** Documentar as **transições válidas**. — §6.3
+  - ✅ `ARCHITECTURE.md` §6.2 (tabela de transições + diagrama).
 
 ### 2.4 WalletLedgerEntry (imutável) — §6.4
 - [x] **(P0, IMPL)** Campos: `id`, `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `createdAt`. — §6.4
@@ -97,7 +104,10 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
   - ✅ e um trigger `BEFORE UPDATE OR DELETE` no banco garante o append-only.
 - [x] **(P0, IMPL)** ≤1 lançamento por wallet por transação financeira. — §6.4
   - ✅ `UNIQUE (transaction_id, wallet_id)`.
-- [ ] **(P0, IMPL)** `LOSS` e `REJECTED` **não** geram lançamento. — §6.4
+- [x] **(P0, IMPL)** `LOSS` e `REJECTED` **não** geram lançamento. — §6.4
+  - ✅ `LOSS` não chama `debit`/`credit`; `REJECTED` encerra antes de qualquer movimento.
+    Coberto em `test/integration/wagering.integration.test.ts` (“LOSS without a ledger
+    entry” e “insufficient funds without touching the ledger”).
 - [ ] **(P2, IMPL)** Ledger de **partidas dobradas** (diferencial opcional). — §6.4
 
 ### 2.5 Inbox — §6.5
@@ -109,8 +119,11 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 ### 2.6 Outbox — §6.5
 - [x] **(P0, IMPL)** `OutboxMessage`: `id`, `aggregateId`, `eventType`, `payload`, `occurredAt`, `_attempts`, `_nextAttemptAt`, `_publishedAt`. — §6.5
 - [x] **(P0, IMPL)** `enqueue`, `rehydrate`, `isPending`, `isDue`, `markPublished`, `scheduleRetry` (incrementa `attempts`, calcula backoff). — §6.5
-- [ ] **(P0, IMPL)** **Inbox + alteração de saldo + ledger + outbox na MESMA transação SQL**. — §6.5, §11
-  - parcial: saldo + ledger + outbox já são atômicos na entrada HTTP; falta o inbox (consumidor SQS).
+- [x] **(P0, IMPL)** **Inbox + alteração de saldo + ledger + outbox na MESMA transação SQL**. — §6.5, §11
+  - ✅ `SqsWagerConsumer.process` executa `inbox.tryInsert` → `executeWithin` →
+    `inbox.markProcessed` dentro de um único `unitOfWork.run`; na entrada HTTP, saldo +
+    ledger + outbox já eram atômicos.
+  - O teste explícito de rollback permanece pendente em §9.2.
 
 ---
 
@@ -143,7 +156,8 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 
 ### 3.4 Códigos de falha — §7.2
 - [x] **(P1, IMPL)** Definir taxonomia de `failureCode` **estável e machine-readable**. — §7.2
-- [ ] **(P1, DOC)** Documentar a taxonomia e a semântica (reenviar / corrigir / desistir). — §7.2
+- [x] **(P1, DOC)** Documentar a taxonomia e a semântica (reenviar / corrigir / desistir). — §7.2
+  - ✅ `ARCHITECTURE.md` §7.1 (tabela de códigos emitidos × reservados + ação do provedor).
 
 ---
 
@@ -153,7 +167,10 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 - [x] **(P0, IMPL)** Escolher estratégia: pessimistic lock / optimistic + retry limitado / update atômico condicionado / combinação. — §8
 - [x] **(P0, DOC)** Justificar a estratégia no `ARCHITECTURE.md`. — §8
 - [x] **(P0, IMPL)** Correto com: 2 apostas disputando mesmo saldo; múltiplos workers na mesma wallet; wallets distintas em paralelo; **≥3 instâncias**. — §8
-- [ ] **(P1, IMPL)** Garantias de ordenação/dedup do broker tratadas como **otimização**, não garantia final (banco é a última linha). — §8 *(consumidor SQS pendente)*
+- [x] **(P1, IMPL)** Garantias de ordenação/dedup do broker tratadas como **otimização**, não garantia final (banco é a última linha). — §8
+  - ✅ consumidor SQS implementado; a dedup real é o inbox `(consumer_name, message_id)` na
+    mesma transação. `ContentBasedDeduplication=false` em `docker/localstack/init-sqs.sh`;
+    `ARCHITECTURE.md` §5 e §9 documentam o broker como otimização.
 - [x] **(P0, TEST)** **Cenário obrigatório:** saldo `100.00`, 2 apostas simultâneas de `80.00` → 1 `PROCESSED`, 1 `REJECTED`, saldo final `20.00`, exatamente 1 `DEBIT`, nenhum retry duplica. — §8
 
 ---
@@ -247,43 +264,55 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 ### 9.2 Integração (PG e LocalStack/MiniStack **reais** em containers)
 - [x] **(P1, TEST)** Migrations e constraints. — §13
   - ✅ inclui: unicidade `playerId`+moeda, `CHECK` de saldo, e trigger append-only do ledger.
-- [ ] **(P1, TEST)** Atomicidade entre wallet, ledger, inbox e outbox. — §13
+- [x] **(P1, TEST)** Atomicidade entre wallet, ledger, inbox e outbox. — §13
+  - ✅ `test/integration/atomicity.integration.test.ts`: commit conjunto e rollback forçado
+    dos quatro registros.
 - [x] **(P1, TEST)** Inbox e redelivery. — §13
   - ✅ dedup por `messageId` (mesmo id, dois envios → 1 débito) e payload inválido → DLQ.
 - [x] **(P1, TEST)** Publishers concorrentes sobre a mesma outbox. — §13
   - ✅ dois publishers concorrentes publicam sem perder eventos.
 - [x] **(P1, TEST)** Retry e DLQ. — §13
   - ✅ payload inválido do consumidor vai para a DLQ.
-- [ ] **(P1, TEST)** Recuperação após reinicialização. — §13
+- [x] **(P1, TEST)** Recuperação após reinicialização. — §13
+  - ✅ `test/integration/restart.integration.test.ts`: `PENDING_REFERENCE` retomado e outbox
+    drenada depois de fechar e recriar a aplicação.
 
 ### 9.3 Concorrência (paralelismo real, sem mocks sequenciais)
 - [x] **(P1, TEST)** Mesma aposta enviada **50x em paralelo** → 1 débito. — §13
   - ✅ 10x em paralelo (1 `201`, demais replay, 1 `DEBIT`).
 - [x] **(P1, TEST)** Operações concorrentes disputando saldo da mesma wallet (cenário §8). — §13
-- [ ] **(P1, TEST)** Wallets distintas processadas em paralelo. — §13
-- [ ] **(P1, TEST)** **≥3 processos/instâncias** simultâneos. — §13
-- [ ] **(P1, TEST)** Worker morto **após commit e antes do ack**. — §13
+- [x] **(P1, TEST)** Wallets distintas processadas em paralelo. — §13
+  - ✅ 4 wallets × 5 apostas concorrentes, sem contaminação cruzada.
+- [x] **(P1, TEST)** **≥3 processos/instâncias** simultâneos. — §13
+  - ✅ `test/integration/multi-instance.integration.test.ts`: 3 processos reais disputando a
+    mesma wallet e deduplicando a mesma idempotency key.
+- [x] **(P1, TEST)** Worker morto **após commit e antes do ack**. — §13
+  - ✅ `wager-consumer.integration.test.ts`: commit sem ack + reentrega deduplicada pelo inbox.
 - [x] **(P1, TEST)** Dois publishers sobre a mesma outbox. — §13
 - [x] **(P1, TEST)** `ROLLBACK`/`REFUND` entregue **antes** da referência. — §13
   - ✅ persistência de `PENDING_REFERENCE` comprovada; reprocessamento é o worker do §3.3.
-- [ ] **(P1, TEST)** Reinício do serviço com consistência final comprovada. — §13
-- [ ] **(P0, TEST)** **Invariante final:** `wallet.balance == saldo reconstruído pelo ledger` em todos os testes. — §13
+- [x] **(P1, TEST)** Reinício do serviço com consistência final comprovada. — §13
+  - ✅ `restart.integration.test.ts` valida `wallet.balance == SUM(ledger)` depois do restart.
+- [x] **(P0, TEST)** **Invariante final:** `wallet.balance == saldo reconstruído pelo ledger` em todos os testes. — §13
+  - ✅ helper `test/integration/support/ledger-consistency.ts`, usado nos testes de wallet,
+    wagering, consumer, pending reference, outbox, restart, atomicidade e multi-instância
+    (excluído apenas o teste que corrompe o saldo de propósito).
 
 ---
 
 ## 10. Documentação — §14
 
-- [ ] **(P1, DOC)** `README.md` com **setup e comandos**. — §14
-  - ✅ conteúdo escrito em `docs/SETUP.md`; falta mover/anexar ao `README.md`
+- [x] **(P1, DOC)** `README.md` com **setup e comandos**. — §14
+  - ✅ seção “15. Como rodar este projeto” no `README.md`, com link para `docs/SETUP.md`.
 - [x] **(P1, DOC)** `ARCHITECTURE.md` com **decisões, trade-offs e limitações**. — §14 *(stub criado; seções [PENDENTE] a preencher)*
   - [x] Decisão de autenticação (implementar/não + desenho). — §2
   - [x] ORM escolhido, mapeamento do `Money` e estratégia transacional. — §4
   - [x] Estratégia de concorrência. — §8 (pessimistic lock por wallet; `ARCHITECTURE.md` §6)
-  - [ ] Taxonomia de `failureCode`. — §7.2
+  - [x] Taxonomia de `failureCode`. — §7.2 (ARCHITECTURE §7.1)
   - [x] Limite/TTL de `PENDING_REFERENCE`. — §7.1 (10 tentativas, backoff 30s→1h)
   - [x] Mapeamento de status HTTP. — §9 (ARCHITECTURE §7)
   - [x] Algoritmo do `payloadHash`. — §9 (ARCHITECTURE §7)
-  - [ ] Transições válidas de `WagerTransaction`. — §6.3
+  - [x] Transições válidas de `WagerTransaction`. — §6.3 (ARCHITECTURE §6.2)
   - [ ] Interpretações adicionais adotadas. — §7
 
 ---
