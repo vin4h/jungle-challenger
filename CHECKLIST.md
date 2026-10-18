@@ -40,8 +40,9 @@ Legenda de prioridade:
 - [x] **(P0, IMPL)** Health endpoints **abertos** (sem auth). — §2, §9
 - [x] **(P0, IMPL)** Identidade do provedor vinda da fila **continua sujeita às validações de domínio** (fila é canal confiável, mas dados não são). — §2
   - ✅ consumidor reutiliza `ProcessWagerTransactionUseCase.executeWithin`; `Money`, `kind`,
-    moeda e referência passam pelas mesmas validações do HTTP.
-  - Observação: não há checagem de que `playerId` pertence à `wallet` informada.
+    moeda, `playerId` (== dono da wallet) e referência passam pelas mesmas validações do HTTP.
+  - ✅ `playerId` divergente do dono da wallet → `REJECTED`/`422` com
+    `failureCode = WALLET_PLAYER_MISMATCH` (mesmo caminho do `CURRENCY_MISMATCH`).
 - [x] CA: priorizar correção financeira/concorrência/idempotência sobre auth (timebox). — §2
 
 ---
@@ -191,7 +192,8 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
   - CA: mesma key + payload diferente → **conflito** (não replay). ✅
 - [x] **(P1, DOC)** Documentar o algoritmo do `payloadHash`. — §9
 - [x] **(P0, IMPL)** `POST /wallets/:walletId/reconciliation` — divergências **não** corrigidas em silêncio: logar + métrica + sinalizar na resposta. — §9
-  - ✅ divergência logada e sinalizada (`consistent:false`); métrica fica na observabilidade.
+  - ✅ divergência logada, contabilizada (`wallet_reconciliation_divergences_total`) e
+    sinalizada (`consistent:false`), nunca corrigida em silêncio.
 - [x] **(P0, IMPL)** `GET /health/live` (processo vivo). — §9
 - [x] **(P0, IMPL)** `GET /health/ready` (PG e SQS alcançáveis). — §9
 - [x] **(P1, IMPL)** Mapeamento de status HTTP distinguindo, de forma **consistente em todos os endpoints**: payload inválido, conflito de idempotência, rejeição de negócio, aceite pendente e falha transitória. — §9
@@ -279,7 +281,7 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 
 ### 9.3 Concorrência (paralelismo real, sem mocks sequenciais)
 - [x] **(P1, TEST)** Mesma aposta enviada **50x em paralelo** → 1 débito. — §13
-  - ✅ 10x em paralelo (1 `201`, demais replay, 1 `DEBIT`).
+  - ✅ 50x em paralelo (1 `201`, demais replay, 1 `DEBIT`).
 - [x] **(P1, TEST)** Operações concorrentes disputando saldo da mesma wallet (cenário §8). — §13
 - [x] **(P1, TEST)** Wallets distintas processadas em paralelo. — §13
   - ✅ 4 wallets × 5 apostas concorrentes, sem contaminação cruzada.
@@ -303,7 +305,8 @@ Regra de modelagem aplicada a todas as entidades (§6.0):
 ## 10. Documentação — §14
 
 - [x] **(P1, DOC)** `README.md` com **setup e comandos**. — §14
-  - ✅ seção “15. Como rodar este projeto” no `README.md`, com link para `docs/SETUP.md`.
+  - ✅ setup e comandos em `README.md` (seções 1–15); o detalhamento de variáveis,
+    Keycloak, filas e workers vive no próprio `README.md`.
 - [x] **(P1, DOC)** `ARCHITECTURE.md` com **decisões, trade-offs e limitações**. — §14 *(stub criado; seções [PENDENTE] a preencher)*
   - [x] Decisão de autenticação (implementar/não + desenho). — §2
   - [x] ORM escolhido, mapeamento do `Money` e estratégia transacional. — §4

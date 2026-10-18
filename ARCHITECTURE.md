@@ -260,6 +260,7 @@ provedor é o que ele deve fazer ao receber aquele código.
 |---|---|---|---|
 | `INSUFFICIENT_FUNDS` | Sim | `BET` cujo débito deixaria o saldo negativo. | Não reenviar o mesmo payload; ajustar a operação ou aguardar saldo. |
 | `CURRENCY_MISMATCH` | Sim | Moeda da operação diferente da moeda da wallet. | Corrigir o payload. |
+| `WALLET_PLAYER_MISMATCH` | Sim | `playerId` da operação diferente do `playerId` da wallet informada (a wallet existe, mas não pertence a esse player). | Corrigir o payload. |
 | `REFERENCE_NOT_FOUND` | Sim | `REFUND`/`ROLLBACK` sem referência após o limite de tentativas; `WIN` com referência opcional inexistente. | Verificar o `referenceExternalTransactionId` e reenviar depois que a referência existir. |
 | `REFERENCE_MISMATCH` | Sim | Referência existe, mas pertence a outro provider, player, wallet, rodada ou moeda. | Corrigir a referência. |
 | `REFERENCE_NOT_REVERSIBLE` | Sim | Referência não está `PROCESSED` ou o tipo não é reversível pelo `kind` pedido. | Investigar o estado da referência antes de reenviar. |
@@ -348,7 +349,8 @@ vive no use case.
 
 **Reconciliação:** `POST /wallets/:walletId/reconciliation` reconstrói o saldo pelo
 ledger com `SUM(CREDIT − DEBIT)` + `COUNT(*)` (numérico exato) e compara com o saldo
-materializado. Divergências são **logadas e sinalizadas na resposta** (`consistent:
+materializado. Divergências são **logadas, contabilizadas na métrica
+`wallet_reconciliation_divergences_total` e sinalizadas na resposta** (`consistent:
 false`), nunca corrigidas em silêncio.
 
 ---
@@ -370,7 +372,8 @@ com o `correlationId` do evento. O logger mescla esses campos automaticamente.
 `GET /metrics` (texto Prometheus, público). Cobre: `wager_transactions_total{status,kind}`,
 `wager_idempotent_replays_total`, `wager_duplicates_total`, `outbox_published_total`,
 `outbox_retries_total`, `outbox_lag_seconds`, `consumer_messages_total{outcome}`,
-`wager_processing_seconds` e `wallet_lock_wait_seconds`. Como o lock pessimista **bloqueia**
+`wager_processing_seconds`, `wallet_lock_wait_seconds` e
+`wallet_reconciliation_divergences_total`. Como o lock pessimista **bloqueia**
 em vez de falhar, “conflito de lock” é medido como **tempo de espera** na aquisição do
 `SELECT ... FOR UPDATE`.
 

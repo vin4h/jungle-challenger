@@ -750,7 +750,7 @@ Teste de carga também conta como diferencial. Se fizer, exponha como `bun run t
 ## 15. Como rodar este projeto
 
 Esta seção descreve o caminho feliz local. O detalhamento (variáveis, Keycloak, filas,
-exemplos de curl e workers) está em [`docs/SETUP.md`](docs/SETUP.md).
+exemplos de curl e workers) está em [`README.md`](README.md).
 
 ### Pré-requisitos
 
@@ -793,7 +793,7 @@ curl -s http://localhost:3000/metrics
 Com `AUTH_ENABLED=true`, os endpoints de negócio exigem um Bearer token do Keycloak;
 `health` e `metrics` são sempre públicos. Para desenvolvimento local, `AUTH_ENABLED=false`
 torna o guard um no-op deliberado. O processo de obtenção do token está em
-[`docs/SETUP.md`](docs/SETUP.md) §7.
+[`README.md`](README.md) §7.
 
 ### Workers e filas
 
